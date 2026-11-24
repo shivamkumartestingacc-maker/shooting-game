@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hold The Road</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0d10; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; cursor: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+"use strict";
+// ---------- config ----------
+const COL = {
+  orange: { core: "255,214,160", aura: "255,120,30" },  // less evil
+  red:    { core: "255,170,160", aura: "255,30,20" },   // evil (later)
+  blue:   { core: "200,235,255", aura: "60,150,255" },  // normal people (later)
+};
+const SCENE_SCALE = 0.7;   // scene renders below screen res, upscaled soft
+const SOLO_KILLS = 6;      // phase 1: one at a time
+const WAVES = [3, 4, 6];   // phase 2: groups
+const ATTACK_Z = 2.6;      // distance at which they start hitting you
+const CAM_H = 1.6;
+
+// ---------- canvases ----------
+const view = document.getElementById("c");
+const vctx = view.getContext("2d");
+const scene = document.createElement("canvas");   // persistent buffer (gives ghost trails)
+const sctx = scene.getContext("2d");
+const bg = document.createElement("canvas");      // static road/poles/trees
+const bctx = bg.getContext("2d");
+let W, H, VW, VH, f, hor, cx, vignette;
+
+function resize() {
+  const dpr = Math.min(devicePixelRatio || 1, 1.5);
+  VW = view.width = innerWidth * dpr; VH = view.height = innerHeight * dpr;
+  W = scene.width = bg.width = Math.round(innerWidth * SCENE_SCALE);
+  H = scene.height = bg.height = Math.round(innerHeight * SCENE_SCALE);
+  f = H * 0.9; hor = H * 0.42; cx = W / 2;
+  drawBackground();
+  vignette = vctx.createRadialGradient(VW/2, VH/2, Math.min(VW,VH)*0.25, VW/2, VH/2, Math.max(VW,VH)*0.75);
+  vignette.addColorStop(0, "rgba(0,0,0,0)");
+  vignette.addColorStop(1, "rgba(0,0,0,0.85)");
+}
+const proj = (x, y, z) => [cx + x * f / z, hor + (CAM_H - y) * f / z];
+
+// ---------- static background: barely-there world ----------
+function drawBackground() {
+  const g = bctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, "#0e1217");
+  g.addColorStop(0.42, "#232a33");   // fog glow at horizon
+  g.addColorStop(1, "#0c0f13");
+  bctx.fillStyle = g; bctx.fillRect(0, 0, W, H);
+
+  const fogA = z => Math.max(0, 0.55 - z / 70);   // far = swallowed by fog
+  bctx.lineCap = "round";
+  // road edges + faint center dashes
+  for (let z = 1.2; z < 80; z *= 1.08) {
+    const z2 = z * 1.08;
+    bctx.strokeStyle = `rgba(150,165,185,${fogA(z) * 0.35})`;
+    bctx.lineWidth = Math.max(0.5, 6 / z);
+    for (const x of [-2.6, 2.6]) {
+      const [a, b] = proj(x, 0, z), [c, d] = proj(x, 0, z2);
+      bctx.beginPath(); bctx.moveTo(a, b); bctx.lineTo(c, d); bctx.stroke();
+    }
+  }
+  for (let z = 2; z < 70; z += 3) {
+    const [a, b] = proj(0, 0, z), [c, d] = proj(0, 0, z + 1.2);
+    bctx.strokeStyle = `rgba(150,165,185,${fogA(z) * 0.18})`;
+    bctx.lineWidth = Math.max(0.5, 5 / z);
+    bctx.beginPath(); bctx.moveTo(a, b); bctx.lineTo(c, d); bctx.stroke();
+  }
+  // wet-road sheen down the middle
+  const sh = bctx.createLinearGradient(0, hor, 0, H);
+  sh.addColorStop(0, "rgba(120,140,165,0.10)"); sh.addColorStop(1, "rgba(0,0,0,0)");
+  bctx.fillStyle = sh;
+  bctx.beginPath();
+  const [l1x, l1y] = proj(-2.6, 0, 1.2), [r1x] = proj(2.6, 0, 1.2);
+  bctx.moveTo(cx, hor); bctx.lineTo(r1x, l1y); bctx.lineTo(l1x, l1y); bctx.fill();
+
+  // telephone poles + sagging wires
+  const poles = [];
+  for (let z = 4; z < 70; z += 9) for (const x of [-4, 4.4]) poles.push([x, z]);
+  for (const [x, z] of poles) {
+    const [px, py] = proj(x, 0, z), [, ty] = proj(x, 7, z);
+    bctx.strokeStyle = `rgba(5,7,10,${0.9 - z / 90})`;
+    bctx.lineWidth = Math.max(1, 14 / z);
+    bctx.beginPath(); bctx.moveTo(px, py); bctx.lineTo(px, ty); bctx.stroke();
+    const [ax, ay] = proj(x - 0.9, 6.6, z), [bx2] = proj(x + 0.9, 6.6, z);
+    bctx.lineWidth = Math.max(0.6, 6 / z);
+    bctx.beginPath(); bctx.moveTo(ax, ay); bctx.lineTo(bx2, ay); bctx.stroke();
+  }
+  bctx.lineWidth = 1;
+  for (const side of [-4, 4.4]) for (const dx of [-0.7, 0.2, 0.8]) {
+    bctx.strokeStyle = "rgba(5,7,10,0.55)";
+    bctx.beginPath();
+    for (let z = 4; z < 66; z += 9) {
+      const [a, b] = proj(side + dx, 6.6, z), [c, d] = proj(side + dx, 6.6, z + 9);
+      const [, sag] = proj(side + dx, 5.9, z + 4.5);
+      if (z === 4) bctx.moveTo(a, b);
+      bctx.quadraticCurveTo((a + c) / 2, sag, c, d);
+    }
+    bctx.stroke();
+  }
+  // bare tree silhouettes on the edges
+  const rnd = mulberry(7);
+  for (let i = 0; i < 14; i++) {
+    const side = i % 2 ? 1 : -1, z = 3 + rnd() * 40, x = side * (6 + rnd() * 5);
+    const [bx, by] = proj(x, 0, z), h = (5 + rnd() * 4) * f / z;
+    bctx.strokeStyle = `rgba(4,6,9,${0.85 - z / 60})`;
+    branch(bx, by, -Math.PI / 2, h * 0.45, Math.max(1, 18 / z), 5, rnd);
+  }
+}
+function branch(x, y, a, len, w, depth, rnd) {
+  if (depth === 0 || len < 2) return;
+  const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len;
+  bctx.lineWidth = w; bctx.beginPath(); bctx.moveTo(x, y); bctx.lineTo(x2, y2); bctx.stroke();
+  const n = 2 + (rnd() * 2 | 0);
+  for (let i = 0; i < n; i++) branch(x2, y2, a + (rnd() - 0.5) * 1.3, len * (0.55 + rnd() * 0.2), w * 0.65, depth - 1, rnd);
+}
+function mulberry(s) { return () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const hash = (a, b, c) => { let h = Math.imul(a, 374761393) ^ Math.imul(b, 668265263) ^ Math.imul(c, 2246822519); h = Math.imul(h ^ h >>> 13, 1274126177); return ((h ^ h >>> 16) >>> 0) / 4294967296; };
+
+// ---------- grain: pre-rolled noise tiles ----------
+const grain = Array.from({ length: 4 }, () => {
+  const t = document.createElement("canvas"); t.width = t.height = 256;
+  const c = t.getContext("2d"), img = c.createImageData(256, 256);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = Math.random() * 255;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255;
+  }
+  c.putImageData(img, 0, 0); return t;
+});
+
+// ---------- glowing figure ----------
+// Outline built each frame; vertices jitter at ~14Hz so the body "boils" like thermal footage.
+function figurePath(e, t) {
+  const [fx, fy] = proj(e.x, 0, e.z), h = 1.8 * f / e.z;
+  const tick = Math.floor(t * 14), j = 0.014 * h;
+  let k = 0;
+  const J = () => (hash(e.id, k++, tick) - 0.5) * j;
+  const walk = e.state === "walk" ? Math.sin(e.phase) : 0;
+  const reach = e.reach;                                   // 0 = arms hang, 1 = arms up at you
+  const lerp = (a, b) => a + (b - a) * reach;
+  const P = (dx, dy) => [fx + dx * h + J(), fy - dy * h + J()];
+  const handY = lerp(0.44, 0.78), handX = lerp(0.16, 0.21);
+  const pts = [
+    P(-0.03, 0.83), P(-0.12, 0.775), P(-0.15 - 0.02 * reach, lerp(0.62, 0.74)),
+    P(-handX, handY), P(-handX + 0.04, handY - 0.01), P(-0.1, 0.68),
+    P(-0.1, 0.45), P(-0.08 + walk * 0.02, 0.24), P(-0.085 + walk * 0.04, 0.0),
+    P(-0.035 + walk * 0.04, 0.0), P(-0.02, 0.24), P(0, 0.42),
+    P(0.02, 0.24), P(0.035 - walk * 0.04, 0.0), P(0.085 - walk * 0.04, 0.0),
+    P(0.08 - walk * 0.02, 0.24), P(0.1, 0.45), P(0.1, 0.68),
+    P(handX - 0.04, handY - 0.01), P(handX, handY), P(0.15 + 0.02 * reach, lerp(0.62, 0.74)),
+    P(0.12, 0.775), P(0.03, 0.83),
+  ];
+  const p = new Path2D();
+  p.moveTo(...pts[0]);
+  for (let i = 1; i < pts.length; i++) {            // midpoint smoothing = soft organic edge
+    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+    p.quadraticCurveTo(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2);
+  }
+  p.closePath();
+  const [hx, hy] = P(0, 0.9);
+  p.ellipse(hx, hy, 0.056 * h + J() * 0.3, 0.072 * h + J() * 0.3, 0, 0, Math.PI * 2);
+  return { p, fx, fy, h, head: [hx, hy, 0.08 * h] };
+}
+
+function drawFigure(ctx, e, t) {
+  const g = figurePath(e, t);
+  e.geom = g;
+  const c = COL[e.kind];
+  const flick = 0.82 + 0.18 * hash(e.id, 999, Math.floor(t * 20));
+  const a = Math.min(1, e.alpha) * flick;
+  const hit = e.hitFlash > 0 ? 1 : 0;
+
+  const soft = px => { ctx.filter = `blur(${Math.max(0.5, px).toFixed(1)}px)`; };  // no-op where unsupported
+  const breathe = 1 + 0.15 * Math.sin(t * 3 + e.id);
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  // reflection on wet road
+  ctx.save();
+  ctx.translate(0, g.fy * 2); ctx.scale(1, -1);
+  ctx.globalAlpha = 0.1 * a; soft(g.h * 0.03);
+  ctx.fillStyle = `rgba(${c.aura},0.7)`; ctx.fill(g.p);
+  ctx.restore();
+  ctx.globalAlpha = a;
+  // wide halo
+  ctx.shadowColor = `rgba(${c.aura},0.7)`; ctx.shadowBlur = g.h * 0.3 * breathe;
+  soft(g.h * 0.04);
+  ctx.fillStyle = `rgba(${c.aura},0.22)`; ctx.fill(g.p);
+  ctx.shadowBlur = 0;
+  // body: saturated, soft-edged
+  soft(g.h * 0.012);
+  ctx.fillStyle = `rgba(${c.aura},0.42)`; ctx.fill(g.p);
+  // bright rim, like the outline glow in the refs
+  ctx.strokeStyle = `rgba(${c.core},0.45)`; ctx.lineWidth = Math.max(1, g.h * 0.012);
+  ctx.stroke(g.p);
+  // warm inner light, strongest in chest/head, never full white
+  soft(g.h * 0.03);
+  const core = ctx.createRadialGradient(g.fx, g.fy - g.h * 0.72, 0, g.fx, g.fy - g.h * 0.6, g.h * 0.5);
+  core.addColorStop(0, `rgba(${hit ? "255,255,255" : c.core},${hit ? 0.9 : 0.45})`);
+  core.addColorStop(1, `rgba(${c.aura},0)`);
+  ctx.fillStyle = core; ctx.fill(g.p);
+  ctx.filter = "none";
+  ctx.restore();
+}
+
+// ---------- game state ----------
+let enemies, sparks, hp, ammo, reloading, kills, phase, waveIdx, nextSpawn, msg, msgT, shake, dmgFlash, muzzle, over, idSeq, now;
+const mouse = { x: 0, y: 0 };
+
+function reset() {
+  enemies = []; sparks = []; hp = 100; ammo = 8; reloading = 0; kills = 0;
+  phase = "solo"; waveIdx = 0; nextSpawn = 1.5; shake = 0; dmgFlash = 0; muzzle = 0; over = null; idSeq = 1;
+  say("HOLD THE ROAD");
+}
+function say(m) { msg = m; msgT = 2.5; }
+
+function spawn(kind, fromSide) {
+  const side = Math.random() < 0.5 ? -1 : 1;
+  enemies.push({
+    id: idSeq++, kind,
+    x: fromSide ? side * (6 + Math.random() * 3) : (Math.random() - 0.5) * 4,
+    tx: (Math.random() - 0.5) * 3.2,               // lane they drift toward
+    z: fromSide ? 7 + Math.random() * 6 : 14 + Math.random() * 10,
+    speed: fromSide ? 1.6 + Math.random() * 0.6 : 1.1 + Math.random() * 0.4,
+    hp: 3, alpha: 0, phase: Math.random() * 6, reach: 0,
+    state: "walk", atkT: 0.8, hitFlash: 0,
+  });
+}
+
+function update(dt) {
+  if (over) return;
+  // spawning director
+  nextSpawn -= dt;
+  const alive = enemies.length;
+  if (phase === "solo" && alive === 0 && nextSpawn <= 0) {
+    if (kills >= SOLO_KILLS) { phase = "horde"; nextSpawn = 2.5; say("THEY'RE COMING"); }
+    else { spawn("orange", false); nextSpawn = 1.2; }
+  } else if (phase === "horde" && alive === 0 && nextSpawn <= 0) {
+    if (waveIdx >= WAVES.length) { over = "clear"; say("ROAD CLEAR"); return; }
+    for (let i = 0; i < WAVES[waveIdx]; i++) spawn("orange", i % 2 === 1);
+    waveIdx++; nextSpawn = 2.5;
+  }
+
+  for (const e of enemies) {
+    e.alpha = Math.min(1, e.alpha + dt * 1.5);
+    e.hitFlash = Math.max(0, e.hitFlash - dt);
+    if (e.state === "walk") {
+      e.z -= e.speed * dt;
+      e.x += (e.tx - e.x) * Math.min(1, dt * 0.6);
+      e.phase += dt * e.speed * 4;
+      e.reach = Math.max(0, Math.min(1, (6 - e.z) / 3.4));   // arms rise as they close in
+      if (e.z <= ATTACK_Z) { e.z = ATTACK_Z; e.state = "attack"; }
+    } else {
+      e.reach = 1;
+      e.atkT -= dt;
+      e.z = ATTACK_Z - Math.max(0, Math.sin(e.atkT * 6)) * 0.2;  // lunge
+      if (e.atkT <= 0) {
+        e.atkT = 1.3; hp -= 8; shake = 14; dmgFlash = 0.5;
+        if (hp <= 0) { hp = 0; over = "dead"; say("YOU DIED"); }
+      }
+    }
+  }
+  for (const s of sparks) { s.x += s.vx * dt; s.y += s.vy * dt; s.vy -= 30 * dt; s.life -= dt; }
+  sparks = sparks.filter(s => s.life > 0);
+  if (reloading > 0 && (reloading -= dt) <= 0) ammo = 8;
+}
+
+// ---------- input ----------
+let actx;
+function shotSound(empty) {
+  actx = actx || new AudioContext();
+  const len = empty ? 0.03 : 0.25, b = actx.createBuffer(1, actx.sampleRate * len, actx.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, empty ? 1 : 3);
+  const src = actx.createBufferSource(), lp = actx.createBiquadFilter(), gn = actx.createGain();
+  lp.type = "lowpass"; lp.frequency.value = empty ? 3000 : 1400; gn.gain.value = empty ? 0.2 : 0.6;
+  src.buffer = b; src.connect(lp).connect(gn).connect(actx.destination); src.start();
+}
+function reload() { if (reloading <= 0 && ammo < 8) { reloading = 0.9; say("RELOADING"); } }
+
+view.addEventListener("pointermove", ev => { mouse.x = ev.clientX; mouse.y = ev.clientY; });
+view.addEventListener("contextmenu", ev => { ev.preventDefault(); reload(); });
+addEventListener("keydown", ev => { if (ev.key === "r" || ev.key === "R") reload(); });
+view.addEventListener("pointerdown", ev => {
+  if (ev.button !== 0) return;
+  mouse.x = ev.clientX; mouse.y = ev.clientY;
+  if (over) { if (msgT <= 1.5) reset(); return; }
+  if (reloading > 0) return;
+  if (ammo === 0) { shotSound(true); say("RELOAD  [R / RIGHT CLICK]"); return; }
+  ammo--; shotSound(false); muzzle = 0.08; shake = Math.max(shake, 3);
+  const sx = mouse.x * SCENE_SCALE, sy = mouse.y * SCENE_SCALE;
+  // nearest enemy first
+  for (const e of [...enemies].sort((a, b) => a.z - b.z)) {
+    if (!e.geom || e.alpha < 0.3) continue;
+    const [hx, hy, hr] = e.geom.head;
+    const head = Math.hypot(sx - hx, sy - hy) < hr;
+    if (!head && !sctx.isPointInPath(e.geom.p, sx, sy)) continue;
+    e.hp -= head ? 3 : 1; e.hitFlash = 0.08;
+    if (e.state === "walk") e.z += 0.6;          // knockback
+    if (e.hp <= 0) kill(e);
+    break;
+  }
+});
+
+function kill(e) {
+  const g = e.geom;
+  for (let i = 0; i < 70; i++) {                 // glow breaks into embers
+    sparks.push({
+      x: g.fx + (Math.random() - 0.5) * g.h * 0.3, y: g.fy - Math.random() * g.h,
+      vx: (Math.random() - 0.5) * 60, vy: -20 - Math.random() * 60,
+      life: 0.6 + Math.random() * 1.2, r: 0.5 + Math.random() * g.h * 0.012, kind: e.kind,
+    });
+  }
+  enemies.splice(enemies.indexOf(e), 1);
+  kills++; if (phase === "solo") nextSpawn = 1.2;
+}
+
+// ---------- render ----------
+function render(t) {
+  // scene buffer: background laid at partial alpha so moving glow leaves short ghost trails
+  sctx.globalCompositeOperation = "source-over";
+  sctx.globalAlpha = 0.55; sctx.drawImage(bg, 0, 0); sctx.globalAlpha = 1;
+  // drifting fog
+  for (let i = 0; i < 3; i++) {
+    const x = ((t * (8 + i * 5) + i * 300) % (W + 400)) - 200, y = hor + (i - 1) * H * 0.06;
+    const fg = sctx.createRadialGradient(x, y, 0, x, y, W * 0.35);
+    fg.addColorStop(0, "rgba(120,135,155,0.035)"); fg.addColorStop(1, "rgba(120,135,155,0)");
+    sctx.fillStyle = fg; sctx.fillRect(0, 0, W, H);
+  }
+  for (const e of [...enemies].sort((a, b) => b.z - a.z)) drawFigure(sctx, e, t);
+  sctx.globalCompositeOperation = "lighter";
+  for (const s of sparks) {
+    const a = Math.min(1, s.life);
+    sctx.fillStyle = `rgba(${COL[s.kind].aura},${a * 0.8})`;
+    sctx.beginPath(); sctx.arc(s.x, s.y, s.r * (1 + (1 - a)), 0, 7); sctx.fill();
+  }
+  if (muzzle > 0) {
+    const m = sctx.createRadialGradient(W * 0.55, H, 0, W * 0.55, H, H * 0.9);
+    m.addColorStop(0, "rgba(255,220,170,0.35)"); m.addColorStop(1, "rgba(255,220,170,0)");
+    sctx.fillStyle = m; sctx.fillRect(0, 0, W, H);
+  }
+  sctx.globalCompositeOperation = "source-over";
+
+  // view: handheld shake + upscale
+  const s = shake + 0.8;
+  const ox = (Math.sin(t * 13.1) + Math.sin(t * 7.3)) * s * 0.5, oy = (Math.cos(t * 11.7) + Math.sin(t * 5.1)) * s * 0.5;
+  vctx.fillStyle = "#0b0d10"; vctx.fillRect(0, 0, VW, VH);
+  vctx.drawImage(scene, ox - s, oy - s, VW + 2 * s, VH + 2 * s);
+
+  // grain (changes every frame)
+  vctx.globalCompositeOperation = "overlay"; vctx.globalAlpha = 0.55;
+  const tile = grain[(Math.random() * 4) | 0], gx = -Math.random() * 256, gy = -Math.random() * 256;
+  for (let y = gy; y < VH; y += 256) for (let x = gx; x < VW; x += 256) vctx.drawImage(tile, x, y);
+  vctx.globalCompositeOperation = "screen"; vctx.globalAlpha = 0.07;
+  for (let y = gy; y < VH; y += 256) for (let x = gx; x < VW; x += 256) vctx.drawImage(tile, x, y);
+  vctx.globalCompositeOperation = "source-over"; vctx.globalAlpha = 1;
+  // brightness flicker like a cheap night sensor
+  vctx.fillStyle = `rgba(0,0,0,${0.05 + Math.random() * 0.06})`; vctx.fillRect(0, 0, VW, VH);
+  vctx.fillStyle = vignette; vctx.fillRect(0, 0, VW, VH);
+  if (dmgFlash > 0) { vctx.fillStyle = `rgba(160,0,0,${dmgFlash * 0.6})`; vctx.fillRect(0, 0, VW, VH); }
+
+  drawHUD(t);
+}
+
+function glowText(txt, x, y, size, rgb, a, align) {
+  vctx.font = `${size}px ui-monospace, Menlo, Consolas, monospace`;
+  vctx.textAlign = align || "center"; vctx.textBaseline = "middle";
+  vctx.shadowColor = `rgba(${rgb},${a})`; vctx.shadowBlur = size * 0.8;
+  vctx.fillStyle = `rgba(${rgb},${a})`; vctx.fillText(txt, x, y);
+  vctx.shadowBlur = 0;
+}
+
+function drawHUD(t) {
+  const k = VW / innerWidth, pad = 28 * k;
+  const mx = mouse.x * k, my = mouse.y * k;
+  // crosshair
+  vctx.strokeStyle = "rgba(220,235,255,0.85)"; vctx.lineWidth = 1.5 * k;
+  vctx.shadowColor = "rgba(150,200,255,0.9)"; vctx.shadowBlur = 8 * k;
+  vctx.beginPath(); vctx.arc(mx, my, 14 * k, 0, 7); vctx.stroke();
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    vctx.beginPath(); vctx.moveTo(mx + dx * 8 * k, my + dy * 8 * k); vctx.lineTo(mx + dx * 20 * k, my + dy * 20 * k); vctx.stroke();
+  }
+  vctx.shadowBlur = 0;
+  // ammo ticks
+  for (let i = 0; i < 8; i++) {
+    vctx.fillStyle = i < ammo ? "rgba(220,235,255,0.8)" : "rgba(220,235,255,0.12)";
+    vctx.fillRect(VW - pad - (i + 1) * 9 * k, VH - pad - 22 * k, 4 * k, 22 * k);
+  }
+  // health bar
+  vctx.fillStyle = "rgba(200,210,225,0.12)"; vctx.fillRect(pad, VH - pad - 6 * k, 180 * k, 6 * k);
+  vctx.fillStyle = hp > 30 ? "rgba(190,215,240,0.75)" : "rgba(255,60,50,0.9)";
+  vctx.fillRect(pad, VH - pad - 6 * k, 180 * k * hp / 100, 6 * k);
+  glowText(`KILLS ${kills}`, pad, pad, 14 * k, "200,215,235", 0.6, "left");
+  const rec = Math.floor(t * 2) % 2 ? "●" : " ";
+  glowText(`${rec} REC  NIGHT`, VW - pad, pad, 14 * k, "255,90,80", 0.7, "right");
+  if (msgT > 0) {
+    const a = Math.min(1, msgT) * (0.7 + 0.3 * Math.random());
+    glowText(msg, VW / 2, VH * 0.2, 30 * k, over === "dead" ? "255,60,50" : "220,235,255", a);
+  }
+  if (over && msgT <= 1.5) glowText("CLICK TO RESTART", VW / 2, VH * 0.2 + 44 * k, 14 * k, "200,215,235", 0.6);
+}
+
+// ---------- loop ----------
+let last = performance.now();
+function frame(ts) {
+  const dt = Math.min(0.05, (ts - last) / 1000); last = ts; now = ts / 1000;
+  shake = Math.max(0, shake - dt * 40); dmgFlash = Math.max(0, dmgFlash - dt);
+  muzzle = Math.max(0, muzzle - dt);
+  msgT = over ? Math.max(1, msgT - dt) : msgT - dt;
+  update(dt); render(now);
+  requestAnimationFrame(frame);
+}
+addEventListener("resize", resize);
+resize(); reset();
+mouse.x = innerWidth / 2; mouse.y = innerHeight / 2;
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
