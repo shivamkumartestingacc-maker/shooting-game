@@ -29,7 +29,7 @@ const MAG = 8;
 // ---------- canvases ----------
 const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
 const view = document.getElementById("c"), vctx = view.getContext("2d");
-let scene, sctx, bg, bctx, F, fctx, C, cctx, half, hctx, s1, s1ctx, s2, s2ctx;
+let scene, sctx, bg, bctx, F, fctx, C, cctx, half, hctx, s1, s1ctx, s2, s2ctx, Rm, rmctx;
 let W, H, VW, VH, f, hor, cx, vignette, fogTex;
 
 function resize() {
@@ -40,6 +40,7 @@ function resize() {
   bg = mk(W, H); bctx = bg.getContext("2d");
   F = mk(W, H); fctx = F.getContext("2d");                 // living silhouettes, flat colour
   C = mk(W, H); cctx = C.getContext("2d");                 // inner hot light, masked to F
+  Rm = mk(W, H); rmctx = Rm.getContext("2d");              // bright inner rim along the silhouette edge
   half = mk(W >> 1, H >> 1); hctx = half.getContext("2d"); // blur chain by downsampling
   s1 = mk(W >> 2, H >> 2); s1ctx = s1.getContext("2d");
   s2 = mk(Math.ceil(W / 12), Math.ceil(H / 12)); s2ctx = s2.getContext("2d");
@@ -264,41 +265,46 @@ function ik(a, b, l1, l2) {           // two-bone IK in the y/d plane, knee bend
   return [(a[0] + b[0]) / 2, a[1] + (vy * ca + py * sa) * l1, a[2] + (vd * ca + pd * sa) * l1];
 }
 
+const STRIDE = 0.34;   // half step length per leg (m)
+const STANCE = 0.6;    // share of the gait cycle a foot stays planted
+// foot position along the walk axis (d, negative = toward camera) and lift, for gait position u in [0,1)
+function footGait(u, S) {
+  if (u < STANCE) return [lerp(-S, S, u / STANCE), 0];      // planted: slides back under the hips at ground speed, no skating
+  const k = (u - STANCE) / (1 - STANCE);
+  return [lerp(S, -S, smooth(k)), Math.sin(Math.PI * k) * (0.1 + S * 0.25)];
+}
+
 function skeleton(e, t) {
-  const s = e.style, p = e.phase, w = e.state === "walk" ? 1 : 0.25;
-  const bob = Math.abs(Math.cos(p)) * 0.035 * w;          // highest when one leg passes the other
-  const sway = Math.sin(p) * 0.05 * w;
-  const rot = Math.sin(p) * 0.06 * w;                      // shoulders counter-rotate the hips
-  const lean = s.lean + e.reach * 0.08 + Math.max(0, e.grab) * 0.18 - e.stagger * 0.35;
-  const jerk = hash(e.id, 77, Math.floor((t + s.twitch) * 1.7)) < 0.15 ? (hash(e.id, 78, Math.floor(t * 12)) - 0.5) * 0.1 : 0;
-  const pelvis = [sway, 0.9 + bob, 0];
-  const shC = [sway * 0.45 + s.tilt * 0.03, 1.4 + bob, -lean];
-  const head = [shC[0] + s.tilt * 0.09 + jerk, 1.6 + bob - Math.abs(s.tilt) * 0.04, shC[2] - 0.05 - lean * 0.4 + e.stagger * 0.1];
-  const legs = [-1, 1].map(side => {
-    const ph = p + (side > 0 ? Math.PI : 0), limp = side === s.limpSide ? s.limp : 0;
-    const stride = 0.3 * (1 - limp * 0.5) * w;
-    const lift = Math.max(0, Math.cos(ph)) * 0.14 * (1 - limp * 0.85) * w;   // dragged foot barely lifts
-    const hip = [pelvis[0] + side * 0.09 * s.build, pelvis[1], pelvis[2] - side * rot * 0.6];
-    const foot = [hip[0] + side * 0.025, 0.07 + lift, -Math.sin(ph) * stride + limp * 0.06];
-    return { hip, knee: ik(hip, foot, 0.45, 0.45), foot };
+  const s = e.style, w = e.state === "walk" ? 1 : 0, S = STRIDE * s.stride * w;
+  const u = ((e.phase / (Math.PI * 2)) % 1 + 1) % 1;
+  const bob = 0.028 * w * Math.cos(2 * Math.PI * (2 * u - 0.6));   // highest at each mid-stance
+  const sway = -0.03 * w * Math.cos(2 * Math.PI * (u - 0.3));      // weight shifts over the planted foot
+  const lean = s.lean + e.reach * 0.06 + Math.max(0, e.grab) * 0.18 - e.stagger * 0.35;
+  const pelvis = [sway, 0.92 + bob, 0];
+  const shC = [sway * 0.4, 1.42 + bob * 0.8, -lean];
+  const head = [shC[0] + s.tilt * 0.03, 1.62 + bob * 0.7, shC[2] - 0.02 - lean * 0.3 + e.stagger * 0.1];
+  const feet = [footGait(u, S), footGait((u + 0.5) % 1, S)];
+  const legs = [-1, 1].map((side, i) => {
+    const [fd, lift] = feet[i];
+    const hip = [pelvis[0] + side * 0.09 * s.build, pelvis[1], fd * 0.12];   // pelvis turns with the leading leg
+    const foot = [hip[0] + side * 0.015, 0.07 + lift, fd];
+    return { hip, knee: ik(hip, foot, 0.44, 0.44), foot };
   });
-  const arms = [-1, 1].map(side => {
-    const sh = [shC[0] + side * 0.19 * s.build, shC[1] - 0.02, shC[2] + side * rot];
-    const swing = Math.sin(p + (side > 0 ? Math.PI : 0)) * 0.16 * w;
-    const dead = side === s.deadArm;
-    const up = dead ? Math.min(0.15, e.reach) : Math.max(s.armsUp, e.reach);
-    const g = dead ? 0 : e.grab;
-    const hE = [sh[0] + side * 0.04, sh[1] - 0.29, sh[2] + swing * 0.4 + 0.02];
-    const hH = [sh[0] + side * 0.05 + (dead ? side * 0.03 : 0), sh[1] - 0.58, sh[2] + swing];
+  const arms = [-1, 1].map((side, i) => {
+    const fd = feet[i][0];
+    const sh = [shC[0] + side * 0.19 * s.build, shC[1] - 0.03, shC[2] - fd * 0.08];  // shoulders counter-rotate
+    const swing = -fd * 0.5;                                  // arm goes back as its leg goes forward
+    const up = e.reach, g = e.grab;
+    const hE = [sh[0] + side * 0.035, sh[1] - 0.29, sh[2] + swing * 0.45];
+    const hH = [sh[0] + side * 0.045, sh[1] - 0.56, sh[2] + swing - 0.06];
     const rE = [sh[0] + side * 0.01, sh[1] - 0.06, sh[2] - 0.3];
     const rH = [sh[0] - side * 0.03, sh[1] + 0.02, sh[2] - 0.6];
     const elbow = lerp3(hE, rE, up), hand = lerp3(hH, rH, up);
-    // the grab: hands shoot at your face and spread to fill the view
-    // hands converge on the camera (world x ~ 0), not out to the sides
+    // the grab: hands converge on the camera (world x ~ 0) as the body lunges
     const gp = Math.max(0, g), faceX = -e.x + side * 0.16;
     elbow[2] -= g * 0.4; elbow[0] = lerp(elbow[0], (faceX + sh[0]) / 2, gp * 0.7);
     hand[2] -= g * 0.3; hand[1] = lerp(hand[1], 1.5, gp * 0.8); hand[0] = lerp(hand[0], faceX, gp * 0.55);
-    return { side, sh, elbow, hand, up: Math.min(1, up + Math.max(0, g)) };
+    return { side, sh, elbow, hand, up: Math.min(1, up + gp) };
   });
   return { pelvis, shC, head, legs, arms };
 }
@@ -316,50 +322,66 @@ function capsule(path, a, b, ra, rb) {
   circle(path, a[0], a[1], ra); circle(path, b[0], b[1], rb);
 }
 
+function smoothPoly(path, pts) {     // closed curve through edge midpoints, same winding as poly()
+  let a = 0; for (let i = 0; i < pts.length; i++) { const [x0, y0] = pts[i], [x1, y1] = pts[(i + 1) % pts.length]; a += x0 * y1 - x1 * y0; }
+  if (a < 0) pts = pts.slice().reverse();
+  const n = pts.length, m = (p, q) => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], st = m(pts[n - 1], pts[0]);
+  path.moveTo(st[0], st[1]);
+  for (let i = 0; i < n; i++) { const p = pts[i], mm = m(p, pts[(i + 1) % n]); path.quadraticCurveTo(p[0], p[1], mm[0], mm[1]); }
+  path.closePath();
+}
+// torso half-widths (m) from crotch (u<0) to neck (u>1): hips, waist, lats, chest, shoulders, trapezius
+const TORSO = [[1.06, 0.055], [1.02, 0.11], [0.96, 0.165], [0.84, 0.172], [0.64, 0.15], [0.44, 0.125], [0.2, 0.14], [0.02, 0.15], [-0.08, 0.075]];
+
 function buildBody(e, t) {
   const sk = skeleton(e, t), tick = Math.floor(t * 14);
   let n = 0, minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
   // project with per-joint depth (hands near the lens get huge), plus thermal jitter
   const P = j => {
     const z = Math.max(0.5, e.z + j[2]), k = f / z;
-    const x = cx + (e.x + j[0]) * k + (hash(e.id, n, tick) - 0.5) * 0.022 * k;
-    const y = hor + (CAM_H - j[1]) * k + (hash(e.id, n + 400, tick) - 0.5) * 0.022 * k;
+    const x = cx + (e.x + j[0]) * k + (hash(e.id, n, tick) - 0.5) * 0.014 * k;
+    const y = hor + (CAM_H - j[1]) * k + (hash(e.id, n + 400, tick) - 0.5) * 0.014 * k;
     n++; minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
     return [x, y, k];
   };
-  const path = new Path2D(), bw = 0.2 * e.style.build;
-  // torso: shoulders -> chest -> waist -> hips
-  const T = (u, wd, side) => { const c = lerp3(sk.pelvis, sk.shC, u); return P([c[0] + side * wd, c[1], c[2]]); };
-  poly(path, [T(1, bw, -1), T(1, bw, 1), T(0.72, bw * 0.92, 1), T(0.35, bw * 0.66, 1), T(0, bw * 0.78, 1),
-              T(-0.06, 0, 1), T(0, bw * 0.78, -1), T(0.35, bw * 0.66, -1), T(0.72, bw * 0.92, -1)]);
-  const neckBase = P([sk.shC[0], sk.shC[1] + 0.03, sk.shC[2]]), hd = P(sk.head);
-  capsule(path, neckBase, hd, 0.055 * neckBase[2], 0.05 * hd[2]);
-  path.moveTo(hd[0] + 0.095 * hd[2], hd[1]);
-  path.ellipse(hd[0], hd[1] - 0.03 * hd[2], 0.095 * hd[2], 0.12 * hd[2], e.style.tilt * 0.4, 0, Math.PI * 2);
+  const path = new Path2D(), bw = e.style.build;
+  const T = (u, wd, side) => { const c = lerp3(sk.pelvis, sk.shC, u); return P([c[0] + side * wd * bw, c[1], c[2]]); };
+  smoothPoly(path, [...TORSO.map(([u, wd]) => T(u, wd, 1)), T(-0.12, 0, 1), ...TORSO.slice().reverse().map(([u, wd]) => T(u, wd, -1))]);
+  const neckBase = P([sk.shC[0], sk.shC[1] + 0.04, sk.shC[2]]), hd = P(sk.head);
+  const chin = P([sk.head[0], sk.head[1] - 0.08, sk.head[2]]);
+  capsule(path, neckBase, chin, 0.05 * neckBase[2], 0.045 * chin[2]);
+  path.moveTo(hd[0] + 0.082 * hd[2], hd[1]);
+  path.ellipse(hd[0], hd[1], 0.082 * hd[2], 0.105 * hd[2], e.style.tilt * 0.3, 0, Math.PI * 2);
+  const hair = P([sk.head[0], sk.head[1] + 0.045, sk.head[2] + 0.01]);
+  path.moveTo(hair[0] + 0.088 * hair[2], hair[1]);
+  path.ellipse(hair[0], hair[1], 0.088 * hair[2], 0.07 * hair[2], e.style.tilt * 0.3, 0, Math.PI * 2);
   for (const L of sk.legs) {
-    const h = P(L.hip), k = P(L.knee), ft = P(L.foot), toe = P([L.foot[0], L.foot[1] - 0.02, L.foot[2] - 0.13]);
-    capsule(path, h, k, 0.085 * h[2], 0.06 * k[2]);
-    capsule(path, k, ft, 0.058 * k[2], 0.04 * ft[2]);
-    capsule(path, ft, toe, 0.042 * ft[2], 0.035 * toe[2]);
+    const h = P(L.hip), k = P(L.knee), calf = P(lerp3(L.knee, L.foot, 0.3)), a = P(L.foot);
+    const toe = P([L.foot[0], L.foot[1] - 0.04, L.foot[2] - 0.15]);
+    capsule(path, h, k, 0.088 * h[2], 0.052 * k[2]);         // thigh tapers to the knee
+    capsule(path, k, calf, 0.052 * k[2], 0.058 * calf[2]);    // calf swells
+    capsule(path, calf, a, 0.058 * calf[2], 0.031 * a[2]);    // thin ankle
+    capsule(path, a, toe, 0.036 * a[2], 0.027 * toe[2]);
   }
   for (const A of sk.arms) {
-    const s = P(A.sh), el = P(A.elbow), hn = P(A.hand);
-    circle(path, s[0], s[1], 0.075 * s[2]);
-    capsule(path, s, el, 0.058 * s[2], 0.045 * el[2]);
-    capsule(path, el, hn, 0.045 * el[2], 0.034 * hn[2]);
+    const s = P(A.sh), el = P(A.elbow), fore = P(lerp3(A.elbow, A.hand, 0.35)), hn = P(A.hand);
+    circle(path, s[0], s[1], 0.062 * s[2]);                   // deltoid
+    capsule(path, s, el, 0.055 * s[2], 0.038 * el[2]);
+    capsule(path, el, fore, 0.04 * el[2], 0.043 * fore[2]);
+    capsule(path, fore, hn, 0.043 * fore[2], 0.028 * hn[2]);
     hand(path, e, A, hn, t);
   }
-  return { path, head: [hd[0], hd[1] - 0.03 * hd[2], 0.12 * hd[2]], feetY: maxY, kb: f / e.z,
+  return { path, head: [hd[0], hd[1], 0.11 * hd[2]], feetY: maxY, kb: f / e.z,
            chest: T(0.75, 0, 1), box: [minX, minY, maxX, maxY] };
 }
 
 // palm + four two-jointed fingers + thumb; claws open as they reach, clench on the grab
 function hand(path, e, A, hp, t) {
-  const k = hp[2], side = A.side, palm = 0.05 * k;
+  const k = hp[2], side = A.side, palm = 0.042 * k;
   circle(path, hp[0], hp[1], palm);
   if (0.1 * k < 1.5) return;                                // too far to see fingers
   const base = lerp(Math.PI / 2 - side * 0.12, -Math.PI / 2 + side * 0.5, A.up);
-  const curl = e.curl, spread = 0.34 - curl * 0.22, len = 0.1 * k * (1 - curl * 0.55);
+  const curl = e.curl, spread = lerp(0.1, 0.34, A.up) - curl * 0.2, len = 0.09 * k * (1 - curl * 0.55);
   const tk = Math.floor(t * 9), dir = a => [Math.cos(a), Math.sin(a)];
   [0.82, 1, 0.94, 0.74].forEach((m, i) => {
     const a = base + (i - 1.5) * spread + (hash(e.id, 900 + i + side * 7, tk) - 0.5) * 0.22;
@@ -396,11 +418,7 @@ function spawn(kind, fromSide) {
     speed: fromSide ? 1.25 + r() * 0.35 : 0.9 + r() * 0.35,
     hp: 3, alpha: 0, phase: r() * 6, reach: 0, grab: 0, curl: 0.2, stagger: 0, cyc: 0,
     state: "walk", hitFlash: 0, dying: 0,
-    style: {
-      lean: 0.04 + r() * 0.1, limp: r() < 0.65 ? 0.3 + r() * 0.6 : 0, limpSide: r() < 0.5 ? -1 : 1,
-      tilt: (r() - 0.5) * 0.7, armsUp: r() < 0.35 ? 0.45 + r() * 0.4 : 0, deadArm: r() < 0.25 ? (r() < 0.5 ? -1 : 1) : 0,
-      twitch: r() * 100, build: 0.9 + r() * 0.25,
-    },
+    style: { lean: 0.02 + r() * 0.05, tilt: (r() - 0.5) * 0.3, build: 0.9 + r() * 0.22, stride: 0.85 + r() * 0.3 },
   });
 }
 
@@ -432,13 +450,13 @@ function update(dt, t) {
     e.hitFlash = Math.max(0, e.hitFlash - dt);
     e.stagger = Math.max(0, e.stagger - dt * 2.5);
     if (e.state === "walk") {
-      // uneven cadence: the limp leg's stance is slower, forward surge comes with each step
-      const s = e.style, rate = e.speed * Math.PI / 0.6 * (1 + s.limp * 0.45 * Math.sin(e.phase * (s.limpSide > 0 ? 1 : -1)));
-      e.phase += dt * rate;
-      e.z -= e.speed * dt * (0.65 + 0.55 * Math.abs(Math.sin(e.phase))) * (1 - e.stagger);
+      // cadence locked to ground speed so planted feet never slide
+      const v = e.speed * (1 - e.stagger), S = STRIDE * e.style.stride;
+      e.phase += dt * 2 * Math.PI * STANCE * v / (2 * S);
+      e.z -= v * dt;
       e.x += (e.tx - e.x) * Math.min(1, dt * 0.5);
-      e.reach = smooth((7 - e.z) / 4.5);                 // arms come up as they close in
-      e.curl = 0.15 + 0.12 * Math.sin(t * 4 + e.id);
+      e.reach = smooth((4.5 - e.z) / 2.2);               // arms come up only in the last couple of metres
+      e.curl = lerp(0.35, 0.1, e.reach);
       if (e.z <= ATTACK_Z) { e.z = ATTACK_Z; e.state = "attack"; e.cyc = 0; }
     } else {
       // grab cycle: wind back, lunge at your face, clench, let go
@@ -515,7 +533,7 @@ function emitEmbers(e) {
 function render(t) {
   // scene buffer: background laid at partial alpha so glow leaves short ghost trails
   sctx.globalCompositeOperation = "source-over";
-  sctx.globalAlpha = 0.6; sctx.drawImage(bg, 0, 0); sctx.globalAlpha = 1;
+  sctx.globalAlpha = 0.7; sctx.drawImage(bg, 0, 0); sctx.globalAlpha = 1;
   // two drifting fog banks
   sctx.globalCompositeOperation = "screen";
   for (const [speed, yOff, a, sc] of [[6, -0.08, 0.22, 1.6], [14, 0.0, 0.16, 2.2]]) {
@@ -573,9 +591,15 @@ function render(t) {
   s1ctx.clearRect(0, 0, s1.width, s1.height); s1ctx.drawImage(half, 0, 0, s1.width, s1.height);
   s2ctx.clearRect(0, 0, s2.width, s2.height); s2ctx.drawImage(s1, 0, 0, s2.width, s2.height);
 
-  // 3. stack the layers additively: wide halo, soft glow, crisp body, hot core
+  // rim = body minus its own blur: only the edge band survives
+  rmctx.globalCompositeOperation = "source-over"; rmctx.clearRect(0, 0, W, H); rmctx.drawImage(F, 0, 0);
+  rmctx.globalCompositeOperation = "destination-out"; rmctx.drawImage(s1, 0, 0, W, H);
+
+  // 3. stack the layers additively: wide halo, soft glow, crisp body, edge rim, hot core
+  // body laid down opaque first so it stays true orange instead of washing to white over the grey
+  sctx.globalAlpha = 0.88; sctx.drawImage(F, 0, 0);
   sctx.globalCompositeOperation = "lighter";
-  for (const [src, a] of [[s2, 0.55], [s1, 0.3], [half, 0.16], [F, 0.32], [C, 0.42]]) {
+  for (const [src, a] of [[s2, 0.6], [s1, 0.28], [Rm, 1], [C, 0.25]]) {
     sctx.globalAlpha = a; sctx.drawImage(src, 0, 0, W, H);
   }
   sctx.globalAlpha = 1;
@@ -624,6 +648,9 @@ function drawHUD(t) {
     vctx.beginPath(); vctx.moveTo(mx + dx * 8 * k, my + dy * 8 * k); vctx.lineTo(mx + dx * 20 * k, my + dy * 20 * k); vctx.stroke();
   }
   vctx.shadowBlur = 0;
+  // pin-point: dark ring for contrast on bright bodies, white core
+  vctx.fillStyle = "rgba(0,0,0,0.85)"; vctx.beginPath(); vctx.arc(mx, my, 2.6 * k, 0, 7); vctx.fill();
+  vctx.fillStyle = "rgba(255,255,255,1)"; vctx.beginPath(); vctx.arc(mx, my, 1.4 * k, 0, 7); vctx.fill();
   for (let i = 0; i < MAG; i++) {
     vctx.fillStyle = i < ammo ? "rgba(220,235,255,0.8)" : "rgba(220,235,255,0.12)";
     vctx.fillRect(VW - pad - (i + 1) * 9 * k, VH - pad - 22 * k, 4 * k, 22 * k);
