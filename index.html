@@ -6,7 +6,7 @@
 <title>Hold The Road</title>
 <style>
   html, body { margin: 0; height: 100%; background: #0b0d10; overflow: hidden; }
-  canvas { display: block; width: 100vw; height: 100vh; cursor: none; }
+  canvas { display: block; width: 100vw; height: 100vh; cursor: none; touch-action: none; }
 </style>
 </head>
 <body>
@@ -15,30 +15,35 @@
 "use strict";
 // ---------- config ----------
 const COL = {
-  orange: { core: "255,214,160", aura: "255,120,30" },  // less evil
-  red:    { core: "255,170,160", aura: "255,30,20" },   // evil (later)
-  blue:   { core: "200,235,255", aura: "60,150,255" },  // normal people (later)
+  orange: { core: "255,214,160", aura: "255,96,16", ember: "190,40,6" },  // less evil
+  red:    { core: "255,180,165", aura: "255,32,20",  ember: "150,10,5" },  // evil (later)
+  blue:   { core: "210,238,255", aura: "60,150,255", ember: "20,60,160" }, // normal people (later)
 };
 const SCENE_SCALE = 0.7;   // scene renders below screen res, upscaled soft
 const SOLO_KILLS = 6;      // phase 1: one at a time
 const WAVES = [3, 4, 6];   // phase 2: groups
-const ATTACK_Z = 2.6;      // distance at which they start hitting you
-const CAM_H = 1.6;
+const ATTACK_Z = 2.3;      // distance (m) where they stop and start grabbing
+const CAM_H = 1.6;         // eye height (m)
+const MAG = 8;
 
 // ---------- canvases ----------
-const view = document.getElementById("c");
-const vctx = view.getContext("2d");
-const scene = document.createElement("canvas");   // persistent buffer (gives ghost trails)
-const sctx = scene.getContext("2d");
-const bg = document.createElement("canvas");      // static road/poles/trees
-const bctx = bg.getContext("2d");
-let W, H, VW, VH, f, hor, cx, vignette;
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const view = document.getElementById("c"), vctx = view.getContext("2d");
+let scene, sctx, bg, bctx, F, fctx, C, cctx, half, hctx, s1, s1ctx, s2, s2ctx;
+let W, H, VW, VH, f, hor, cx, vignette, fogTex;
 
 function resize() {
   const dpr = Math.min(devicePixelRatio || 1, 1.5);
   VW = view.width = innerWidth * dpr; VH = view.height = innerHeight * dpr;
-  W = scene.width = bg.width = Math.round(innerWidth * SCENE_SCALE);
-  H = scene.height = bg.height = Math.round(innerHeight * SCENE_SCALE);
+  W = Math.round(innerWidth * SCENE_SCALE); H = Math.round(innerHeight * SCENE_SCALE);
+  scene = mk(W, H); sctx = scene.getContext("2d");
+  bg = mk(W, H); bctx = bg.getContext("2d");
+  F = mk(W, H); fctx = F.getContext("2d");                 // living silhouettes, flat colour
+  C = mk(W, H); cctx = C.getContext("2d");                 // inner hot light, masked to F
+  half = mk(W >> 1, H >> 1); hctx = half.getContext("2d"); // blur chain by downsampling
+  s1 = mk(W >> 2, H >> 2); s1ctx = s1.getContext("2d");
+  s2 = mk(Math.ceil(W / 12), Math.ceil(H / 12)); s2ctx = s2.getContext("2d");
+  for (const c of [hctx, s1ctx, s2ctx]) c.imageSmoothingQuality = "high";
   f = H * 0.9; hor = H * 0.42; cx = W / 2;
   drawBackground();
   vignette = vctx.createRadialGradient(VW/2, VH/2, Math.min(VW,VH)*0.25, VW/2, VH/2, Math.max(VW,VH)*0.75);
@@ -46,88 +51,203 @@ function resize() {
   vignette.addColorStop(1, "rgba(0,0,0,0.85)");
 }
 const proj = (x, y, z) => [cx + x * f / z, hor + (CAM_H - y) * f / z];
-
-// ---------- static background: barely-there world ----------
-function drawBackground() {
-  const g = bctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, "#0e1217");
-  g.addColorStop(0.42, "#232a33");   // fog glow at horizon
-  g.addColorStop(1, "#0c0f13");
-  bctx.fillStyle = g; bctx.fillRect(0, 0, W, H);
-
-  const fogA = z => Math.max(0, 0.55 - z / 70);   // far = swallowed by fog
-  bctx.lineCap = "round";
-  // road edges + faint center dashes
-  for (let z = 1.2; z < 80; z *= 1.08) {
-    const z2 = z * 1.08;
-    bctx.strokeStyle = `rgba(150,165,185,${fogA(z) * 0.35})`;
-    bctx.lineWidth = Math.max(0.5, 6 / z);
-    for (const x of [-2.6, 2.6]) {
-      const [a, b] = proj(x, 0, z), [c, d] = proj(x, 0, z2);
-      bctx.beginPath(); bctx.moveTo(a, b); bctx.lineTo(c, d); bctx.stroke();
-    }
-  }
-  for (let z = 2; z < 70; z += 3) {
-    const [a, b] = proj(0, 0, z), [c, d] = proj(0, 0, z + 1.2);
-    bctx.strokeStyle = `rgba(150,165,185,${fogA(z) * 0.18})`;
-    bctx.lineWidth = Math.max(0.5, 5 / z);
-    bctx.beginPath(); bctx.moveTo(a, b); bctx.lineTo(c, d); bctx.stroke();
-  }
-  // wet-road sheen down the middle
-  const sh = bctx.createLinearGradient(0, hor, 0, H);
-  sh.addColorStop(0, "rgba(120,140,165,0.10)"); sh.addColorStop(1, "rgba(0,0,0,0)");
-  bctx.fillStyle = sh;
-  bctx.beginPath();
-  const [l1x, l1y] = proj(-2.6, 0, 1.2), [r1x] = proj(2.6, 0, 1.2);
-  bctx.moveTo(cx, hor); bctx.lineTo(r1x, l1y); bctx.lineTo(l1x, l1y); bctx.fill();
-
-  // telephone poles + sagging wires
-  const poles = [];
-  for (let z = 4; z < 70; z += 9) for (const x of [-4, 4.4]) poles.push([x, z]);
-  for (const [x, z] of poles) {
-    const [px, py] = proj(x, 0, z), [, ty] = proj(x, 7, z);
-    bctx.strokeStyle = `rgba(5,7,10,${0.9 - z / 90})`;
-    bctx.lineWidth = Math.max(1, 14 / z);
-    bctx.beginPath(); bctx.moveTo(px, py); bctx.lineTo(px, ty); bctx.stroke();
-    const [ax, ay] = proj(x - 0.9, 6.6, z), [bx2] = proj(x + 0.9, 6.6, z);
-    bctx.lineWidth = Math.max(0.6, 6 / z);
-    bctx.beginPath(); bctx.moveTo(ax, ay); bctx.lineTo(bx2, ay); bctx.stroke();
-  }
-  bctx.lineWidth = 1;
-  for (const side of [-4, 4.4]) for (const dx of [-0.7, 0.2, 0.8]) {
-    bctx.strokeStyle = "rgba(5,7,10,0.55)";
-    bctx.beginPath();
-    for (let z = 4; z < 66; z += 9) {
-      const [a, b] = proj(side + dx, 6.6, z), [c, d] = proj(side + dx, 6.6, z + 9);
-      const [, sag] = proj(side + dx, 5.9, z + 4.5);
-      if (z === 4) bctx.moveTo(a, b);
-      bctx.quadraticCurveTo((a + c) / 2, sag, c, d);
-    }
-    bctx.stroke();
-  }
-  // bare tree silhouettes on the edges
-  const rnd = mulberry(7);
-  for (let i = 0; i < 14; i++) {
-    const side = i % 2 ? 1 : -1, z = 3 + rnd() * 40, x = side * (6 + rnd() * 5);
-    const [bx, by] = proj(x, 0, z), h = (5 + rnd() * 4) * f / z;
-    bctx.strokeStyle = `rgba(4,6,9,${0.85 - z / 60})`;
-    branch(bx, by, -Math.PI / 2, h * 0.45, Math.max(1, 18 / z), 5, rnd);
-  }
-}
-function branch(x, y, a, len, w, depth, rnd) {
-  if (depth === 0 || len < 2) return;
-  const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len;
-  bctx.lineWidth = w; bctx.beginPath(); bctx.moveTo(x, y); bctx.lineTo(x2, y2); bctx.stroke();
-  const n = 2 + (rnd() * 2 | 0);
-  for (let i = 0; i < n; i++) branch(x2, y2, a + (rnd() - 0.5) * 1.3, len * (0.55 + rnd() * 0.2), w * 0.65, depth - 1, rnd);
-}
 function mulberry(s) { return () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const hash = (a, b, c) => { let h = Math.imul(a, 374761393) ^ Math.imul(b, 668265263) ^ Math.imul(c, 2246822519); h = Math.imul(h ^ h >>> 13, 1274126177); return ((h ^ h >>> 16) >>> 0) / 4294967296; };
+const lerp = (a, b, k) => a + (b - a) * k;
+const lerp3 = (a, b, k) => [lerp(a[0], b[0], k), lerp(a[1], b[1], k), lerp(a[2], b[2], k)];
+const smooth = k => (k = Math.max(0, Math.min(1, k)), k * k * (3 - 2 * k));
+const easeOut = k => 1 - Math.pow(1 - Math.max(0, Math.min(1, k)), 3);
+
+// ---------- background: a barely-there night road ----------
+function fogTexture(w, h, seed) {
+  // tileable-in-x value noise, soft band; drifted across the horizon each frame
+  const r = mulberry(seed), c = mk(w, h), x = c.getContext("2d"), img = x.createImageData(w, h);
+  const oct = [[6, 0.5], [12, 0.27], [24, 0.15], [48, 0.08]].map(([n, amp]) => {
+    const gh = Math.ceil(n * h / w) + 2; return { n, amp, gh, v: Array.from({ length: n * gh }, r) };
+  });
+  for (let y = 0; y < h; y++) for (let i = 0; i < w; i++) {
+    let v = 0;
+    for (const o of oct) {
+      const gx = i / w * o.n, gy = y / w * o.n, x0 = Math.floor(gx), y0 = Math.floor(gy);
+      const fx = smooth(gx - x0), fy = smooth(gy - y0), x1 = (x0 + 1) % o.n;
+      const g = (xx, yy) => o.v[Math.min(yy, o.gh - 1) * o.n + (xx % o.n)];
+      v += lerp(lerp(g(x0, y0), g(x1, y0), fx), lerp(g(x0, y0 + 1), g(x1, y0 + 1), fx), fy) * o.amp;
+    }
+    const band = Math.pow(Math.sin(Math.PI * y / h), 1.6);
+    const a = Math.max(0, Math.min(1, (v - 0.38) * 2.2)) * band;
+    const p = (y * w + i) * 4;
+    img.data[p] = 150; img.data[p + 1] = 163; img.data[p + 2] = 182; img.data[p + 3] = a * 255;
+  }
+  x.putImageData(img, 0, 0); return c;
+}
+
+function drawBackground() {
+  const rnd = mulberry(11), b = bctx;
+  // sky + ground
+  const g = b.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, "#0c1015"); g.addColorStop(0.3, "#161b22");
+  g.addColorStop(0.42, "#2a313b"); g.addColorStop(0.5, "#1a1f26"); g.addColorStop(1, "#090b0e");
+  b.fillStyle = g; b.fillRect(0, 0, W, H);
+  // distant lamp washing the fog at the end of the road
+  const lg = b.createRadialGradient(cx + W * 0.03, hor - H * 0.02, 0, cx, hor, W * 0.45);
+  lg.addColorStop(0, "rgba(185,198,215,0.16)"); lg.addColorStop(0.3, "rgba(150,165,185,0.06)"); lg.addColorStop(1, "rgba(0,0,0,0)");
+  b.fillStyle = lg; b.fillRect(0, 0, W, H);
+
+  // three tree lines, each further one swallowed more by fog
+  for (const [z, col, base] of [[70, "rgba(28,34,42,0.55)", 7], [42, "rgba(18,22,28,0.7)", 8], [24, "rgba(10,13,17,0.85)", 9]]) {
+    treeLine(z, col, base, rnd);
+  }
+
+  // road surface
+  const [nlx, ny] = proj(-2.8, 0, 0.9), [nrx] = proj(2.8, 0, 0.9);
+  const road = b.createLinearGradient(0, hor, 0, H);
+  road.addColorStop(0, "rgba(60,70,82,0.6)"); road.addColorStop(0.25, "rgba(30,35,42,0.8)"); road.addColorStop(1, "rgba(14,16,20,1)");
+  b.fillStyle = road;
+  b.beginPath(); b.moveTo(cx - 1, hor); b.lineTo(cx + 1, hor); b.lineTo(nrx, ny); b.lineTo(nlx, ny); b.fill();
+  // asphalt speckle
+  for (let i = 0; i < 5000; i++) {
+    const z = 1 + Math.pow(rnd(), 2.2) * 50, x = (rnd() - 0.5) * 5.4, [px, py] = proj(x, 0, z);
+    b.fillStyle = `rgba(${rnd() < 0.5 ? "0,0,0" : "120,135,150"},${0.12 * rnd()})`;
+    const s = Math.max(0.6, 3 / z); b.fillRect(px, py, s, s);
+  }
+  // wet sheen: the lamp smeared down the road
+  const sh = b.createLinearGradient(0, hor, 0, H);
+  sh.addColorStop(0, "rgba(170,185,205,0.12)"); sh.addColorStop(0.4, "rgba(140,155,175,0.03)"); sh.addColorStop(1, "rgba(0,0,0,0)");
+  b.save(); b.filter = "blur(6px)"; b.fillStyle = sh;
+  b.beginPath(); b.moveTo(cx - 2, hor); b.lineTo(cx + 2, hor); b.lineTo(cx + W * 0.2, H); b.lineTo(cx - W * 0.14, H); b.fill(); b.restore();
+  // puddles
+  for (let i = 0; i < 9; i++) {
+    const z = 3 + rnd() * 18, x = (rnd() - 0.5) * 4, [px, py] = proj(x, 0, z);
+    const rx = (0.4 + rnd() * 0.9) * f / z, ry = rx * CAM_H / z * 0.9;
+    const pg = b.createRadialGradient(px, py, 0, px, py, rx);
+    pg.addColorStop(0, `rgba(150,165,185,${0.1 - z / 300})`); pg.addColorStop(0.8, "rgba(90,100,115,0.04)"); pg.addColorStop(1, "rgba(0,0,0,0)");
+    b.fillStyle = pg; b.beginPath(); b.ellipse(px, py, rx, ry, 0, 0, 7); b.fill();
+  }
+  // edge lines (worn, broken) + centre dashes
+  const fogA = z => Math.max(0, 0.6 - z / 60);
+  b.lineCap = "round";
+  for (let z = 1.1; z < 70; z *= 1.06) {
+    if (rnd() < 0.25) continue;
+    for (const x of [-2.5, 2.5]) {
+      const [a1, b1] = proj(x, 0, z), [c1, d1] = proj(x, 0, z * 1.06);
+      b.strokeStyle = `rgba(160,172,190,${fogA(z) * 0.22})`; b.lineWidth = Math.max(0.5, 5 / z);
+      b.beginPath(); b.moveTo(a1, b1); b.lineTo(c1, d1); b.stroke();
+    }
+  }
+  for (let z = 1.5; z < 60; z += 3) {
+    const [a1, b1] = proj(0, 0, z), [c1, d1] = proj(0, 0, z + 1.3);
+    b.strokeStyle = `rgba(160,172,190,${fogA(z) * 0.14})`; b.lineWidth = Math.max(0.5, 4 / z);
+    b.beginPath(); b.moveTo(a1, b1); b.lineTo(c1, d1); b.stroke();
+  }
+  // verge grass at road edges
+  for (let i = 0; i < 1400; i++) {
+    const side = rnd() < 0.5 ? -1 : 1, z = 1.2 + Math.pow(rnd(), 1.8) * 40, x = side * (2.8 + rnd() * 3);
+    const [px, py] = proj(x, 0, z), h = (0.15 + rnd() * 0.45) * f / z;
+    b.strokeStyle = `rgba(6,8,11,${0.75 - z / 70})`; b.lineWidth = Math.max(0.5, 2.2 / z);
+    b.beginPath(); b.moveTo(px, py); b.quadraticCurveTo(px + (rnd() - 0.5) * h * 0.3, py - h * 0.6, px + (rnd() - 0.5) * h * 0.7, py - h); b.stroke();
+  }
+
+  // fence posts on the right
+  b.strokeStyle = "rgba(6,8,11,0.6)";
+  for (let z = 2; z < 40; z += 2.5) {
+    const [px, py] = proj(3.6, 0, z), [, ty] = proj(3.6, 1.1, z);
+    b.lineWidth = Math.max(0.6, 6 / z); b.beginPath(); b.moveTo(px, py); b.lineTo(px + (rnd() - 0.5) * 3 / z * 8, ty); b.stroke();
+  }
+  for (const wy of [0.95, 0.6]) {
+    b.lineWidth = 0.7; b.beginPath();
+    for (let z = 2; z < 40; z += 2.5) {
+      const [a1, b1] = proj(3.6, wy, z), [c1, d1] = proj(3.6, wy, z + 2.5), [, sg] = proj(3.6, wy - 0.12, z + 1.25);
+      if (z === 2) b.moveTo(a1, b1); b.quadraticCurveTo((a1 + c1) / 2, sg, c1, d1);
+    }
+    b.stroke();
+  }
+
+  // telephone poles, crossarms, sagging wires running overhead past the camera
+  const poleZ = []; for (let z = 4; z < 75; z += 10) poleZ.push(z);
+  for (const x of [-4.2, 4.6]) for (const z of poleZ) {
+    const [px, py] = proj(x, 0, z), [tx, ty] = proj(x, 8, z);
+    b.strokeStyle = `rgba(5,7,10,${0.95 - z / 85})`;
+    b.lineWidth = Math.max(1, 16 / z); b.beginPath(); b.moveTo(px, py); b.lineTo(tx, ty); b.stroke();
+    for (const ay of [7.5, 6.8]) {
+      const [ax, aY] = proj(x - 1, ay, z), [bx] = proj(x + 1, ay, z);
+      b.lineWidth = Math.max(0.7, 7 / z); b.beginPath(); b.moveTo(ax, aY); b.lineTo(bx, aY); b.stroke();
+    }
+  }
+  b.lineWidth = 0.9;
+  for (const x of [-4.2, 4.6]) for (const [dx, wy] of [[-0.9, 7.5], [-0.3, 7.5], [0.4, 7.5], [0.9, 7.5], [-0.6, 6.8], [0.6, 6.8]]) {
+    b.strokeStyle = "rgba(5,7,10,0.6)"; b.beginPath();
+    const zs = [0.9, ...poleZ];
+    for (let i = 0; i < zs.length - 1; i++) {
+      const [a1, b1] = proj(x + dx, wy, zs[i]), [c1, d1] = proj(x + dx, wy, zs[i + 1]);
+      const [, sg] = proj(x + dx, wy - 0.7, (zs[i] + zs[i + 1]) / 2);
+      if (i === 0) b.moveTo(a1, b1); b.quadraticCurveTo((a1 + c1) / 2, sg, c1, d1);
+    }
+    b.stroke();
+  }
+
+  // bare trees: mid-distance ones, then two big ones crowding the frame edges
+  for (let i = 0; i < 12; i++) {
+    const side = i % 2 ? 1 : -1, z = 6 + rnd() * 30, x = side * (6.5 + rnd() * 6);
+    const [bx, by] = proj(x, 0, z), h = (6 + rnd() * 5) * f / z;
+    tree(bx, by, -Math.PI / 2 + (rnd() - 0.5) * 0.2, h * 0.38, Math.max(1, 22 / z), 6, rnd, `rgba(4,6,9,${0.85 - z / 55})`);
+  }
+  tree(W * 0.97, H * 1.05, -Math.PI / 2 - 0.25, H * 0.42, W * 0.018, 8, rnd, "rgba(3,4,6,0.92)");
+  tree(W * 0.02, H * 1.05, -Math.PI / 2 + 0.2, H * 0.36, W * 0.014, 7, rnd, "rgba(3,4,6,0.9)");
+
+  // foreground grass in the bottom corners
+  for (let i = 0; i < 260; i++) {
+    const left = rnd() < 0.5, x = left ? rnd() * W * 0.3 : W - rnd() * W * 0.3;
+    const edge = left ? x / (W * 0.3) : (W - x) / (W * 0.3), h = H * (0.04 + rnd() * 0.16) * (1 - edge * 0.8);
+    b.strokeStyle = `rgba(3,4,6,${0.95 - edge * 0.4})`; b.lineWidth = 0.8 + rnd() * 1.6;
+    b.beginPath(); b.moveTo(x, H + 2);
+    b.quadraticCurveTo(x + (rnd() - 0.5) * h * 0.4, H - h * 0.6, x + (rnd() - 0.5) * h * 0.8, H - h); b.stroke();
+  }
+  // final fog veil over the horizon band
+  const veil = b.createLinearGradient(0, hor - H * 0.2, 0, hor + H * 0.12);
+  veil.addColorStop(0, "rgba(40,47,57,0)"); veil.addColorStop(0.6, "rgba(40,47,57,0.35)"); veil.addColorStop(1, "rgba(40,47,57,0)");
+  b.fillStyle = veil; b.fillRect(0, 0, W, H);
+
+  fogTex = fogTexture(512, 96, 3);
+}
+
+function treeLine(z, col, base, rnd) {
+  const b = bctx, [, gy] = proj(0, 0, z), p1 = rnd() * 9, p2 = rnd() * 9;
+  b.fillStyle = col; b.beginPath(); b.moveTo(0, gy + 2);
+  for (let sx = 0; sx <= W + 2; sx += 2) {
+    const wx = (sx - cx) * z / f;
+    let h = base + 2.2 * Math.sin(wx * 0.12 + p1) + 1.4 * Math.sin(wx * 0.37 + p2) + rnd() * 1.4;
+    if (rnd() < 0.05) h += 2 + rnd() * 3;                     // a taller crown
+    const clear = Math.max(0, 1 - Math.max(0, Math.abs(wx) - 2.6) / 2.5);
+    h *= 1 - clear * 0.92;                                    // gap where the road runs through
+    b.lineTo(sx, gy - h * f / z);
+  }
+  b.lineTo(W, gy + 2); b.fill();
+  // spindly tops poking out of the canopy
+  b.strokeStyle = col;
+  for (let i = 0; i < 18; i++) {
+    const sx = rnd() * W, wx = (sx - cx) * z / f;
+    if (Math.abs(wx) < 6) continue;
+    tree(sx, gy - base * 0.6 * f / z, -Math.PI / 2, (3 + rnd() * 3) * f / z, Math.max(0.6, 6 / z), 4, rnd, col);
+  }
+}
+
+function tree(x, y, a, len, w, depth, rnd, col) {
+  if (depth === 0 || len < 1.5 || w < 0.3) return;
+  const b = bctx, bend = (rnd() - 0.5) * 0.6;
+  const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len;
+  const mx = (x + x2) / 2 + Math.cos(a + Math.PI / 2) * bend * len * 0.25, my = (y + y2) / 2 + Math.sin(a + Math.PI / 2) * bend * len * 0.25;
+  b.strokeStyle = col; b.lineWidth = w; b.lineCap = "round";
+  b.beginPath(); b.moveTo(x, y); b.quadraticCurveTo(mx, my, x2, y2); b.stroke();
+  const n = depth > 5 ? 2 : 2 + (rnd() * 2 | 0);
+  for (let i = 0; i < n; i++) {
+    const na = a + (i - (n - 1) / 2) * (0.35 + rnd() * 0.45) + (rnd() - 0.5) * 0.3;
+    tree(x2, y2, na, len * (0.62 + rnd() * 0.18), w * 0.62, depth - 1, rnd, col);
+  }
+}
 
 // ---------- grain: pre-rolled noise tiles ----------
 const grain = Array.from({ length: 4 }, () => {
-  const t = document.createElement("canvas"); t.width = t.height = 256;
-  const c = t.getContext("2d"), img = c.createImageData(256, 256);
+  const t = mk(256, 256), c = t.getContext("2d"), img = c.createImageData(256, 256);
   for (let i = 0; i < img.data.length; i += 4) {
     const v = Math.random() * 255;
     img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255;
@@ -135,110 +255,168 @@ const grain = Array.from({ length: 4 }, () => {
   c.putImageData(img, 0, 0); return t;
 });
 
-// ---------- glowing figure ----------
-// Outline built each frame; vertices jitter at ~14Hz so the body "boils" like thermal footage.
-function figurePath(e, t) {
-  const [fx, fy] = proj(e.x, 0, e.z), h = 1.8 * f / e.z;
-  const tick = Math.floor(t * 14), j = 0.014 * h;
-  let k = 0;
-  const J = () => (hash(e.id, k++, tick) - 0.5) * j;
-  const walk = e.state === "walk" ? Math.sin(e.phase) : 0;
-  const reach = e.reach;                                   // 0 = arms hang, 1 = arms up at you
-  const lerp = (a, b) => a + (b - a) * reach;
-  const P = (dx, dy) => [fx + dx * h + J(), fy - dy * h + J()];
-  const handY = lerp(0.44, 0.78), handX = lerp(0.16, 0.21);
-  const pts = [
-    P(-0.03, 0.83), P(-0.12, 0.775), P(-0.15 - 0.02 * reach, lerp(0.62, 0.74)),
-    P(-handX, handY), P(-handX + 0.04, handY - 0.01), P(-0.1, 0.68),
-    P(-0.1, 0.45), P(-0.08 + walk * 0.02, 0.24), P(-0.085 + walk * 0.04, 0.0),
-    P(-0.035 + walk * 0.04, 0.0), P(-0.02, 0.24), P(0, 0.42),
-    P(0.02, 0.24), P(0.035 - walk * 0.04, 0.0), P(0.085 - walk * 0.04, 0.0),
-    P(0.08 - walk * 0.02, 0.24), P(0.1, 0.45), P(0.1, 0.68),
-    P(handX - 0.04, handY - 0.01), P(handX, handY), P(0.15 + 0.02 * reach, lerp(0.62, 0.74)),
-    P(0.12, 0.775), P(0.03, 0.83),
-  ];
-  const p = new Path2D();
-  p.moveTo(...pts[0]);
-  for (let i = 1; i < pts.length; i++) {            // midpoint smoothing = soft organic edge
-    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
-    p.quadraticCurveTo(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2);
-  }
-  p.closePath();
-  const [hx, hy] = P(0, 0.9);
-  p.ellipse(hx, hy, 0.056 * h + J() * 0.3, 0.072 * h + J() * 0.3, 0, 0, Math.PI * 2);
-  return { p, fx, fy, h, head: [hx, hy, 0.08 * h] };
+// ---------- body: 3D skeleton, projected joint by joint ----------
+// Local coords in metres: x right, y up, d toward the camera is negative.
+function ik(a, b, l1, l2) {           // two-bone IK in the y/d plane, knee bends toward camera
+  const dy = b[1] - a[1], dd = b[2] - a[2], L = Math.hypot(dy, dd) || 1e-4, Lc = Math.min(L, l1 + l2 - 1e-4);
+  const ca = (l1 * l1 + Lc * Lc - l2 * l2) / (2 * l1 * Lc), sa = Math.sqrt(Math.max(0, 1 - ca * ca));
+  const vy = dy / L, vd = dd / L; let py = -vd, pd = vy; if (pd > 0) { py = -py; pd = -pd; }
+  return [(a[0] + b[0]) / 2, a[1] + (vy * ca + py * sa) * l1, a[2] + (vd * ca + pd * sa) * l1];
 }
 
-function drawFigure(ctx, e, t) {
-  const g = figurePath(e, t);
-  e.geom = g;
-  const c = COL[e.kind];
-  const flick = 0.82 + 0.18 * hash(e.id, 999, Math.floor(t * 20));
-  const a = Math.min(1, e.alpha) * flick;
-  const hit = e.hitFlash > 0 ? 1 : 0;
+function skeleton(e, t) {
+  const s = e.style, p = e.phase, w = e.state === "walk" ? 1 : 0.25;
+  const bob = Math.abs(Math.cos(p)) * 0.035 * w;          // highest when one leg passes the other
+  const sway = Math.sin(p) * 0.05 * w;
+  const rot = Math.sin(p) * 0.06 * w;                      // shoulders counter-rotate the hips
+  const lean = s.lean + e.reach * 0.08 + Math.max(0, e.grab) * 0.18 - e.stagger * 0.35;
+  const jerk = hash(e.id, 77, Math.floor((t + s.twitch) * 1.7)) < 0.15 ? (hash(e.id, 78, Math.floor(t * 12)) - 0.5) * 0.1 : 0;
+  const pelvis = [sway, 0.9 + bob, 0];
+  const shC = [sway * 0.45 + s.tilt * 0.03, 1.4 + bob, -lean];
+  const head = [shC[0] + s.tilt * 0.09 + jerk, 1.6 + bob - Math.abs(s.tilt) * 0.04, shC[2] - 0.05 - lean * 0.4 + e.stagger * 0.1];
+  const legs = [-1, 1].map(side => {
+    const ph = p + (side > 0 ? Math.PI : 0), limp = side === s.limpSide ? s.limp : 0;
+    const stride = 0.3 * (1 - limp * 0.5) * w;
+    const lift = Math.max(0, Math.cos(ph)) * 0.14 * (1 - limp * 0.85) * w;   // dragged foot barely lifts
+    const hip = [pelvis[0] + side * 0.09 * s.build, pelvis[1], pelvis[2] - side * rot * 0.6];
+    const foot = [hip[0] + side * 0.025, 0.07 + lift, -Math.sin(ph) * stride + limp * 0.06];
+    return { hip, knee: ik(hip, foot, 0.45, 0.45), foot };
+  });
+  const arms = [-1, 1].map(side => {
+    const sh = [shC[0] + side * 0.19 * s.build, shC[1] - 0.02, shC[2] + side * rot];
+    const swing = Math.sin(p + (side > 0 ? Math.PI : 0)) * 0.16 * w;
+    const dead = side === s.deadArm;
+    const up = dead ? Math.min(0.15, e.reach) : Math.max(s.armsUp, e.reach);
+    const g = dead ? 0 : e.grab;
+    const hE = [sh[0] + side * 0.04, sh[1] - 0.29, sh[2] + swing * 0.4 + 0.02];
+    const hH = [sh[0] + side * 0.05 + (dead ? side * 0.03 : 0), sh[1] - 0.58, sh[2] + swing];
+    const rE = [sh[0] + side * 0.01, sh[1] - 0.06, sh[2] - 0.3];
+    const rH = [sh[0] - side * 0.03, sh[1] + 0.02, sh[2] - 0.6];
+    const elbow = lerp3(hE, rE, up), hand = lerp3(hH, rH, up);
+    // the grab: hands shoot at your face and spread to fill the view
+    // hands converge on the camera (world x ~ 0), not out to the sides
+    const gp = Math.max(0, g), faceX = -e.x + side * 0.16;
+    elbow[2] -= g * 0.4; elbow[0] = lerp(elbow[0], (faceX + sh[0]) / 2, gp * 0.7);
+    hand[2] -= g * 0.3; hand[1] = lerp(hand[1], 1.5, gp * 0.8); hand[0] = lerp(hand[0], faceX, gp * 0.55);
+    return { side, sh, elbow, hand, up: Math.min(1, up + Math.max(0, g)) };
+  });
+  return { pelvis, shC, head, legs, arms };
+}
 
-  const soft = px => { ctx.filter = `blur(${Math.max(0.5, px).toFixed(1)}px)`; };  // no-op where unsupported
-  const breathe = 1 + 0.15 * Math.sin(t * 3 + e.id);
+// path helpers: every sub-shape wound the same way so one nonzero fill unions them
+function poly(path, pts) {
+  let a = 0; for (let i = 0; i < pts.length; i++) { const [x0, y0] = pts[i], [x1, y1] = pts[(i + 1) % pts.length]; a += x0 * y1 - x1 * y0; }
+  if (a < 0) pts = pts.slice().reverse();
+  path.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) path.lineTo(pts[i][0], pts[i][1]); path.closePath();
+}
+function circle(path, x, y, r) { path.moveTo(x + r, y); path.arc(x, y, r, 0, Math.PI * 2); }
+function capsule(path, a, b, ra, rb) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1e-3, nx = -dy / L, ny = dx / L;
+  poly(path, [[a[0] + nx * ra, a[1] + ny * ra], [b[0] + nx * rb, b[1] + ny * rb], [b[0] - nx * rb, b[1] - ny * rb], [a[0] - nx * ra, a[1] - ny * ra]]);
+  circle(path, a[0], a[1], ra); circle(path, b[0], b[1], rb);
+}
 
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  // reflection on wet road
-  ctx.save();
-  ctx.translate(0, g.fy * 2); ctx.scale(1, -1);
-  ctx.globalAlpha = 0.1 * a; soft(g.h * 0.03);
-  ctx.fillStyle = `rgba(${c.aura},0.7)`; ctx.fill(g.p);
-  ctx.restore();
-  ctx.globalAlpha = a;
-  // wide halo
-  ctx.shadowColor = `rgba(${c.aura},0.7)`; ctx.shadowBlur = g.h * 0.3 * breathe;
-  soft(g.h * 0.04);
-  ctx.fillStyle = `rgba(${c.aura},0.22)`; ctx.fill(g.p);
-  ctx.shadowBlur = 0;
-  // body: saturated, soft-edged
-  soft(g.h * 0.012);
-  ctx.fillStyle = `rgba(${c.aura},0.42)`; ctx.fill(g.p);
-  // bright rim, like the outline glow in the refs
-  ctx.strokeStyle = `rgba(${c.core},0.45)`; ctx.lineWidth = Math.max(1, g.h * 0.012);
-  ctx.stroke(g.p);
-  // warm inner light, strongest in chest/head, never full white
-  soft(g.h * 0.03);
-  const core = ctx.createRadialGradient(g.fx, g.fy - g.h * 0.72, 0, g.fx, g.fy - g.h * 0.6, g.h * 0.5);
-  core.addColorStop(0, `rgba(${hit ? "255,255,255" : c.core},${hit ? 0.9 : 0.45})`);
-  core.addColorStop(1, `rgba(${c.aura},0)`);
-  ctx.fillStyle = core; ctx.fill(g.p);
-  ctx.filter = "none";
-  ctx.restore();
+function buildBody(e, t) {
+  const sk = skeleton(e, t), tick = Math.floor(t * 14);
+  let n = 0, minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+  // project with per-joint depth (hands near the lens get huge), plus thermal jitter
+  const P = j => {
+    const z = Math.max(0.5, e.z + j[2]), k = f / z;
+    const x = cx + (e.x + j[0]) * k + (hash(e.id, n, tick) - 0.5) * 0.022 * k;
+    const y = hor + (CAM_H - j[1]) * k + (hash(e.id, n + 400, tick) - 0.5) * 0.022 * k;
+    n++; minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+    return [x, y, k];
+  };
+  const path = new Path2D(), bw = 0.2 * e.style.build;
+  // torso: shoulders -> chest -> waist -> hips
+  const T = (u, wd, side) => { const c = lerp3(sk.pelvis, sk.shC, u); return P([c[0] + side * wd, c[1], c[2]]); };
+  poly(path, [T(1, bw, -1), T(1, bw, 1), T(0.72, bw * 0.92, 1), T(0.35, bw * 0.66, 1), T(0, bw * 0.78, 1),
+              T(-0.06, 0, 1), T(0, bw * 0.78, -1), T(0.35, bw * 0.66, -1), T(0.72, bw * 0.92, -1)]);
+  const neckBase = P([sk.shC[0], sk.shC[1] + 0.03, sk.shC[2]]), hd = P(sk.head);
+  capsule(path, neckBase, hd, 0.055 * neckBase[2], 0.05 * hd[2]);
+  path.moveTo(hd[0] + 0.095 * hd[2], hd[1]);
+  path.ellipse(hd[0], hd[1] - 0.03 * hd[2], 0.095 * hd[2], 0.12 * hd[2], e.style.tilt * 0.4, 0, Math.PI * 2);
+  for (const L of sk.legs) {
+    const h = P(L.hip), k = P(L.knee), ft = P(L.foot), toe = P([L.foot[0], L.foot[1] - 0.02, L.foot[2] - 0.13]);
+    capsule(path, h, k, 0.085 * h[2], 0.06 * k[2]);
+    capsule(path, k, ft, 0.058 * k[2], 0.04 * ft[2]);
+    capsule(path, ft, toe, 0.042 * ft[2], 0.035 * toe[2]);
+  }
+  for (const A of sk.arms) {
+    const s = P(A.sh), el = P(A.elbow), hn = P(A.hand);
+    circle(path, s[0], s[1], 0.075 * s[2]);
+    capsule(path, s, el, 0.058 * s[2], 0.045 * el[2]);
+    capsule(path, el, hn, 0.045 * el[2], 0.034 * hn[2]);
+    hand(path, e, A, hn, t);
+  }
+  return { path, head: [hd[0], hd[1] - 0.03 * hd[2], 0.12 * hd[2]], feetY: maxY, kb: f / e.z,
+           chest: T(0.75, 0, 1), box: [minX, minY, maxX, maxY] };
+}
+
+// palm + four two-jointed fingers + thumb; claws open as they reach, clench on the grab
+function hand(path, e, A, hp, t) {
+  const k = hp[2], side = A.side, palm = 0.05 * k;
+  circle(path, hp[0], hp[1], palm);
+  if (0.1 * k < 1.5) return;                                // too far to see fingers
+  const base = lerp(Math.PI / 2 - side * 0.12, -Math.PI / 2 + side * 0.5, A.up);
+  const curl = e.curl, spread = 0.34 - curl * 0.22, len = 0.1 * k * (1 - curl * 0.55);
+  const tk = Math.floor(t * 9), dir = a => [Math.cos(a), Math.sin(a)];
+  [0.82, 1, 0.94, 0.74].forEach((m, i) => {
+    const a = base + (i - 1.5) * spread + (hash(e.id, 900 + i + side * 7, tk) - 0.5) * 0.22;
+    const [ux, uy] = dir(a), kn = [hp[0] + ux * palm * 0.85, hp[1] + uy * palm * 0.85];
+    const mid = [kn[0] + ux * len * m * 0.55, kn[1] + uy * len * m * 0.55];
+    const [vx, vy] = dir(a - side * curl * 0.9);
+    const tip = [mid[0] + vx * len * m * 0.5, mid[1] + vy * len * m * 0.5];
+    capsule(path, kn, mid, 0.015 * k, 0.012 * k);
+    capsule(path, mid, tip, 0.012 * k, 0.008 * k);
+  });
+  const ta = base + side * 1.15 * (1 - 2 * A.up), [ux, uy] = dir(ta);
+  const tb = [hp[0] + ux * palm * 0.7, hp[1] + uy * palm * 0.7];
+  capsule(path, tb, [tb[0] + ux * 0.06 * k * (1 - curl * 0.4), tb[1] + uy * 0.06 * k * (1 - curl * 0.4)], 0.018 * k, 0.012 * k);
 }
 
 // ---------- game state ----------
-let enemies, sparks, hp, ammo, reloading, kills, phase, waveIdx, nextSpawn, msg, msgT, shake, dmgFlash, muzzle, over, idSeq, now;
+let enemies, embers, hp, ammo, kills, phase, waveIdx, nextSpawn, msg, msgT, shake, dmgFlash, muzzle, over, idSeq, now, helpT;
 const mouse = { x: 0, y: 0 };
 
 function reset() {
-  enemies = []; sparks = []; hp = 100; ammo = 8; reloading = 0; kills = 0;
-  phase = "solo"; waveIdx = 0; nextSpawn = 1.5; shake = 0; dmgFlash = 0; muzzle = 0; over = null; idSeq = 1;
+  enemies = []; embers = []; hp = 100; ammo = MAG; kills = 0;
+  phase = "solo"; waveIdx = 0; nextSpawn = 1.5; shake = 0; dmgFlash = 0; muzzle = 0; over = null; idSeq = 1; helpT = 6;
   say("HOLD THE ROAD");
 }
 function say(m) { msg = m; msgT = 2.5; }
 
 function spawn(kind, fromSide) {
-  const side = Math.random() < 0.5 ? -1 : 1;
+  const r = mulberry((Math.random() * 1e9) | 0), side = r() < 0.5 ? -1 : 1;
   enemies.push({
     id: idSeq++, kind,
-    x: fromSide ? side * (6 + Math.random() * 3) : (Math.random() - 0.5) * 4,
-    tx: (Math.random() - 0.5) * 3.2,               // lane they drift toward
-    z: fromSide ? 7 + Math.random() * 6 : 14 + Math.random() * 10,
-    speed: fromSide ? 1.6 + Math.random() * 0.6 : 1.1 + Math.random() * 0.4,
-    hp: 3, alpha: 0, phase: Math.random() * 6, reach: 0,
-    state: "walk", atkT: 0.8, hitFlash: 0,
+    x: fromSide ? side * (6 + r() * 3) : (r() - 0.5) * 4,
+    tx: (r() - 0.5) * 2.6,                         // lane they drift toward
+    z: fromSide ? 8 + r() * 6 : 15 + r() * 10,
+    speed: fromSide ? 1.25 + r() * 0.35 : 0.9 + r() * 0.35,
+    hp: 3, alpha: 0, phase: r() * 6, reach: 0, grab: 0, curl: 0.2, stagger: 0, cyc: 0,
+    state: "walk", hitFlash: 0, dying: 0,
+    style: {
+      lean: 0.04 + r() * 0.1, limp: r() < 0.65 ? 0.3 + r() * 0.6 : 0, limpSide: r() < 0.5 ? -1 : 1,
+      tilt: (r() - 0.5) * 0.7, armsUp: r() < 0.35 ? 0.45 + r() * 0.4 : 0, deadArm: r() < 0.25 ? (r() < 0.5 ? -1 : 1) : 0,
+      twitch: r() * 100, build: 0.9 + r() * 0.25,
+    },
   });
 }
 
-function update(dt) {
+function update(dt, t) {
+  for (const p of embers) {
+    p.age += dt; p.vy += p.ay * dt; p.y += p.vy * dt;
+    p.x = p.x0 + p.drift * p.age + Math.sin(p.age * p.freq + p.ph) * p.amp * Math.min(3, 0.3 + p.age * 1.6);
+  }
+  embers = embers.filter(p => p.age < p.life);
+  for (const e of enemies) if (e.dying) e.dying += dt / 1.4;
+  enemies = enemies.filter(e => e.dying < 1);
   if (over) return;
+
   // spawning director
   nextSpawn -= dt;
-  const alive = enemies.length;
+  const alive = enemies.filter(e => !e.dying).length;
   if (phase === "solo" && alive === 0 && nextSpawn <= 0) {
     if (kills >= SOLO_KILLS) { phase = "horde"; nextSpawn = 2.5; say("THEY'RE COMING"); }
     else { spawn("orange", false); nextSpawn = 1.2; }
@@ -249,97 +427,158 @@ function update(dt) {
   }
 
   for (const e of enemies) {
-    e.alpha = Math.min(1, e.alpha + dt * 1.5);
+    if (e.dying) continue;
+    e.alpha = Math.min(1, e.alpha + dt * 1.2);
     e.hitFlash = Math.max(0, e.hitFlash - dt);
+    e.stagger = Math.max(0, e.stagger - dt * 2.5);
     if (e.state === "walk") {
-      e.z -= e.speed * dt;
-      e.x += (e.tx - e.x) * Math.min(1, dt * 0.6);
-      e.phase += dt * e.speed * 4;
-      e.reach = Math.max(0, Math.min(1, (6 - e.z) / 3.4));   // arms rise as they close in
-      if (e.z <= ATTACK_Z) { e.z = ATTACK_Z; e.state = "attack"; }
+      // uneven cadence: the limp leg's stance is slower, forward surge comes with each step
+      const s = e.style, rate = e.speed * Math.PI / 0.6 * (1 + s.limp * 0.45 * Math.sin(e.phase * (s.limpSide > 0 ? 1 : -1)));
+      e.phase += dt * rate;
+      e.z -= e.speed * dt * (0.65 + 0.55 * Math.abs(Math.sin(e.phase))) * (1 - e.stagger);
+      e.x += (e.tx - e.x) * Math.min(1, dt * 0.5);
+      e.reach = smooth((7 - e.z) / 4.5);                 // arms come up as they close in
+      e.curl = 0.15 + 0.12 * Math.sin(t * 4 + e.id);
+      if (e.z <= ATTACK_Z) { e.z = ATTACK_Z; e.state = "attack"; e.cyc = 0; }
     } else {
-      e.reach = 1;
-      e.atkT -= dt;
-      e.z = ATTACK_Z - Math.max(0, Math.sin(e.atkT * 6)) * 0.2;  // lunge
-      if (e.atkT <= 0) {
-        e.atkT = 1.3; hp -= 8; shake = 14; dmgFlash = 0.5;
+      // grab cycle: wind back, lunge at your face, clench, let go
+      e.phase += dt * 1.2; e.reach = 1;
+      const prev = e.cyc; e.cyc = (e.cyc + dt) % 1.5;
+      const c = e.cyc;
+      e.grab = c < 0.55 ? -0.2 * smooth(c / 0.55)
+             : c < 0.75 ? -0.2 + 1.2 * easeOut((c - 0.55) / 0.2)
+             : c < 1.05 ? 1 : 1 - smooth((c - 1.05) / 0.45);
+      e.curl = c < 0.62 ? 0.05 : c < 0.8 ? 0.05 + 0.95 * smooth((c - 0.62) / 0.18) : c < 1.05 ? 1 : 1 - smooth((c - 1.05) / 0.4);
+      e.z = ATTACK_Z - Math.max(0, e.grab) * 1.05 + e.stagger * 0.4;   // whole body lunges in
+      if (prev < 0.74 && c >= 0.74) {
+        hp -= 8; shake = 16; dmgFlash = 0.55;
         if (hp <= 0) { hp = 0; over = "dead"; say("YOU DIED"); }
       }
     }
   }
-  for (const s of sparks) { s.x += s.vx * dt; s.y += s.vy * dt; s.vy -= 30 * dt; s.life -= dt; }
-  sparks = sparks.filter(s => s.life > 0);
-  if (reloading > 0 && (reloading -= dt) <= 0) ammo = 8;
 }
 
 // ---------- input ----------
 let actx;
-function shotSound(empty) {
+function sound(kind) {
   actx = actx || new AudioContext();
-  const len = empty ? 0.03 : 0.25, b = actx.createBuffer(1, actx.sampleRate * len, actx.sampleRate), d = b.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, empty ? 1 : 3);
+  const len = { shot: 0.25, empty: 0.03, reload: 0.06 }[kind];
+  const b = actx.createBuffer(1, actx.sampleRate * len, actx.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, kind === "shot" ? 3 : 1);
   const src = actx.createBufferSource(), lp = actx.createBiquadFilter(), gn = actx.createGain();
-  lp.type = "lowpass"; lp.frequency.value = empty ? 3000 : 1400; gn.gain.value = empty ? 0.2 : 0.6;
+  lp.type = kind === "reload" ? "bandpass" : "lowpass";
+  lp.frequency.value = { shot: 1400, empty: 3000, reload: 2200 }[kind]; gn.gain.value = kind === "shot" ? 0.6 : 0.25;
   src.buffer = b; src.connect(lp).connect(gn).connect(actx.destination); src.start();
 }
-function reload() { if (reloading <= 0 && ammo < 8) { reloading = 0.9; say("RELOADING"); } }
+function reload() { if (ammo < MAG) { ammo = MAG; sound("reload"); } }
 
 view.addEventListener("pointermove", ev => { mouse.x = ev.clientX; mouse.y = ev.clientY; });
 view.addEventListener("contextmenu", ev => { ev.preventDefault(); reload(); });
-addEventListener("keydown", ev => { if (ev.key === "r" || ev.key === "R") reload(); });
+addEventListener("keydown", ev => {
+  if (ev.code === "Space" || ev.key === "r" || ev.key === "R") { ev.preventDefault(); reload(); }
+});
 view.addEventListener("pointerdown", ev => {
   if (ev.button !== 0) return;
   mouse.x = ev.clientX; mouse.y = ev.clientY;
   if (over) { if (msgT <= 1.5) reset(); return; }
-  if (reloading > 0) return;
-  if (ammo === 0) { shotSound(true); say("RELOAD  [R / RIGHT CLICK]"); return; }
-  ammo--; shotSound(false); muzzle = 0.08; shake = Math.max(shake, 3);
+  if (ammo === 0) { sound("empty"); say("SPACE TO RELOAD"); return; }
+  ammo--; sound("shot"); muzzle = 0.08; shake = Math.max(shake, 3);
   const sx = mouse.x * SCENE_SCALE, sy = mouse.y * SCENE_SCALE;
-  // nearest enemy first
-  for (const e of [...enemies].sort((a, b) => a.z - b.z)) {
-    if (!e.geom || e.alpha < 0.3) continue;
-    const [hx, hy, hr] = e.geom.head;
-    const head = Math.hypot(sx - hx, sy - hy) < hr;
-    if (!head && !sctx.isPointInPath(e.geom.p, sx, sy)) continue;
-    e.hp -= head ? 3 : 1; e.hitFlash = 0.08;
-    if (e.state === "walk") e.z += 0.6;          // knockback
-    if (e.hp <= 0) kill(e);
+  for (const e of enemies.filter(e => !e.dying && e.geom && e.alpha > 0.3).sort((a, b) => a.z - b.z)) {
+    const [hx, hy, hr] = e.geom.head, head = Math.hypot(sx - hx, sy - hy) < hr;
+    if (!head && !sctx.isPointInPath(e.geom.path, sx, sy)) continue;
+    e.hp -= head ? 3 : 1; e.hitFlash = 0.08; e.stagger = 1;
+    if (e.state === "walk") e.z += 0.5;
+    if (e.hp <= 0) { e.dying = 1e-4; kills++; if (phase === "solo") nextSpawn = 1.4; }
     break;
   }
 });
 
-function kill(e) {
-  const g = e.geom;
-  for (let i = 0; i < 70; i++) {                 // glow breaks into embers
-    sparks.push({
-      x: g.fx + (Math.random() - 0.5) * g.h * 0.3, y: g.fy - Math.random() * g.h,
-      vx: (Math.random() - 0.5) * 60, vy: -20 - Math.random() * 60,
-      life: 0.6 + Math.random() * 1.2, r: 0.5 + Math.random() * g.h * 0.012, kind: e.kind,
+// fire-like embers: rise, accelerate, weave side to side in a widening wave
+function emitEmbers(e) {
+  const g = e.geom, [x0, y0, x1, y1] = g.box, line = lerp(y1, y0 - g.kb * 0.15, e.dying);
+  const sc = Math.max(0.7, Math.min(2.6, g.kb / 140));
+  for (let tries = 0, made = 0; tries < 90 && made < 22; tries++) {
+    const x = lerp(x0, x1, Math.random()), y = line + Math.random() * g.kb * 0.06;
+    if (!sctx.isPointInPath(g.path, x, y)) continue;
+    made++;
+    embers.push({
+      x0: x, x, y, age: 0, life: 1.4 + Math.random() * 1.8, kind: e.kind,
+      vy: -(0.8 + Math.random() * 1.0) * g.kb, ay: -(0.4 + Math.random() * 0.9) * g.kb,
+      amp: (0.03 + Math.random() * 0.09) * g.kb, freq: 3 + Math.random() * 4, ph: Math.random() * 6,
+      drift: (Math.random() - 0.5) * 0.25 * g.kb, size: (1 + Math.random() * 1.8) * sc,
     });
   }
-  enemies.splice(enemies.indexOf(e), 1);
-  kills++; if (phase === "solo") nextSpawn = 1.2;
 }
 
 // ---------- render ----------
 function render(t) {
-  // scene buffer: background laid at partial alpha so moving glow leaves short ghost trails
+  // scene buffer: background laid at partial alpha so glow leaves short ghost trails
   sctx.globalCompositeOperation = "source-over";
-  sctx.globalAlpha = 0.55; sctx.drawImage(bg, 0, 0); sctx.globalAlpha = 1;
-  // drifting fog
-  for (let i = 0; i < 3; i++) {
-    const x = ((t * (8 + i * 5) + i * 300) % (W + 400)) - 200, y = hor + (i - 1) * H * 0.06;
-    const fg = sctx.createRadialGradient(x, y, 0, x, y, W * 0.35);
-    fg.addColorStop(0, "rgba(120,135,155,0.035)"); fg.addColorStop(1, "rgba(120,135,155,0)");
-    sctx.fillStyle = fg; sctx.fillRect(0, 0, W, H);
+  sctx.globalAlpha = 0.6; sctx.drawImage(bg, 0, 0); sctx.globalAlpha = 1;
+  // two drifting fog banks
+  sctx.globalCompositeOperation = "screen";
+  for (const [speed, yOff, a, sc] of [[6, -0.08, 0.22, 1.6], [14, 0.0, 0.16, 2.2]]) {
+    const w = W * sc, h = H * 0.3, x = -((t * speed) % w), y = hor - h / 2 + yOff * H;
+    sctx.globalAlpha = a;
+    sctx.drawImage(fogTex, x, y, w, h); sctx.drawImage(fogTex, x + w, y, w, h);
   }
-  for (const e of [...enemies].sort((a, b) => b.z - a.z)) drawFigure(sctx, e, t);
+  sctx.globalAlpha = 1; sctx.globalCompositeOperation = "source-over";
+
+  // 1. flat silhouettes into F, hot cores into C
+  fctx.clearRect(0, 0, W, H); cctx.clearRect(0, 0, W, H);
+  hctx.clearRect(0, 0, half.width, half.height);
+  for (const e of [...enemies].sort((a, b) => b.z - a.z)) {
+    const g = e.geom = buildBody(e, t), c = COL[e.kind];
+    const a = Math.min(1, e.alpha) * (0.8 + 0.2 * hash(e.id, 999, Math.floor(t * 20))) * (e.dying ? 1 - e.dying * 0.3 : 1);
+    fctx.save();
+    if (e.dying) {                                        // burns away from the feet up
+      const line = lerp(g.feetY, g.box[1] - g.kb * 0.15, e.dying);
+      fctx.beginPath(); fctx.rect(0, 0, W, line); fctx.clip();
+      emitEmbers(e);
+    }
+    fctx.fillStyle = e.hitFlash > 0 ? `rgba(255,255,255,${a})` : `rgba(${c.aura},${a})`;
+    fctx.fill(g.path);
+    fctx.restore();
+    if (e.dying) {                                        // white-hot burning edge
+      const line = lerp(g.feetY, g.box[1] - g.kb * 0.15, e.dying);
+      fctx.save(); fctx.clip(g.path);
+      fctx.fillStyle = `rgba(${c.core},0.95)`; fctx.fillRect(0, line - g.kb * 0.025, W, g.kb * 0.04);
+      fctx.restore();
+    }
+    const [chx, chy] = g.chest, cg = cctx.createRadialGradient(chx, chy, 0, chx, chy, g.kb * 0.6);
+    cg.addColorStop(0, `rgba(${c.core},${0.55 * a})`); cg.addColorStop(1, `rgba(${c.core},0)`);
+    cctx.fillStyle = cg; cctx.fillRect(chx - g.kb, chy - g.kb, g.kb * 2, g.kb * 2);
+    const [hx, hy, hr] = g.head, hg = cctx.createRadialGradient(hx, hy, 0, hx, hy, hr * 1.6);
+    hg.addColorStop(0, `rgba(${c.core},${0.45 * a})`); hg.addColorStop(1, `rgba(${c.core},0)`);
+    cctx.fillStyle = hg; cctx.fillRect(hx - hr * 2, hy - hr * 2, hr * 4, hr * 4);
+    // reflection on the wet road, squashed, goes only into the blurred layers
+    hctx.save(); hctx.scale(half.width / W, half.height / H);
+    hctx.translate(0, g.feetY); hctx.scale(1, -0.6); hctx.translate(0, -g.feetY);
+    hctx.globalAlpha = 0.28 * a * (e.dying ? 1 - e.dying : 1); hctx.fillStyle = `rgba(${c.aura},1)`; hctx.fill(g.path);
+    hctx.restore();
+  }
+  // embers also go into F so they pick up the same glow
+  for (const p of embers) {
+    const u = p.age / p.life, c = COL[p.kind];
+    const rgb = u < 0.15 ? c.core : u < 0.55 ? c.aura : c.ember;
+    fctx.fillStyle = `rgba(${rgb},${Math.pow(1 - u, 1.2)})`;
+    const s = p.size * (1 - u * 0.5);
+    fctx.fillRect(p.x - s / 2, p.y - s / 2, s, s);
+  }
+  cctx.globalCompositeOperation = "destination-in"; cctx.drawImage(F, 0, 0); cctx.globalCompositeOperation = "source-over";
+
+  // 2. blur chain by downsampling: half -> quarter -> twelfth
+  hctx.drawImage(F, 0, 0, half.width, half.height);
+  s1ctx.clearRect(0, 0, s1.width, s1.height); s1ctx.drawImage(half, 0, 0, s1.width, s1.height);
+  s2ctx.clearRect(0, 0, s2.width, s2.height); s2ctx.drawImage(s1, 0, 0, s2.width, s2.height);
+
+  // 3. stack the layers additively: wide halo, soft glow, crisp body, hot core
   sctx.globalCompositeOperation = "lighter";
-  for (const s of sparks) {
-    const a = Math.min(1, s.life);
-    sctx.fillStyle = `rgba(${COL[s.kind].aura},${a * 0.8})`;
-    sctx.beginPath(); sctx.arc(s.x, s.y, s.r * (1 + (1 - a)), 0, 7); sctx.fill();
+  for (const [src, a] of [[s2, 0.55], [s1, 0.3], [half, 0.16], [F, 0.32], [C, 0.42]]) {
+    sctx.globalAlpha = a; sctx.drawImage(src, 0, 0, W, H);
   }
+  sctx.globalAlpha = 1;
   if (muzzle > 0) {
     const m = sctx.createRadialGradient(W * 0.55, H, 0, W * 0.55, H, H * 0.9);
     m.addColorStop(0, "rgba(255,220,170,0.35)"); m.addColorStop(1, "rgba(255,220,170,0)");
@@ -360,7 +599,6 @@ function render(t) {
   vctx.globalCompositeOperation = "screen"; vctx.globalAlpha = 0.07;
   for (let y = gy; y < VH; y += 256) for (let x = gx; x < VW; x += 256) vctx.drawImage(tile, x, y);
   vctx.globalCompositeOperation = "source-over"; vctx.globalAlpha = 1;
-  // brightness flicker like a cheap night sensor
   vctx.fillStyle = `rgba(0,0,0,${0.05 + Math.random() * 0.06})`; vctx.fillRect(0, 0, VW, VH);
   vctx.fillStyle = vignette; vctx.fillRect(0, 0, VW, VH);
   if (dmgFlash > 0) { vctx.fillStyle = `rgba(160,0,0,${dmgFlash * 0.6})`; vctx.fillRect(0, 0, VW, VH); }
@@ -379,7 +617,6 @@ function glowText(txt, x, y, size, rgb, a, align) {
 function drawHUD(t) {
   const k = VW / innerWidth, pad = 28 * k;
   const mx = mouse.x * k, my = mouse.y * k;
-  // crosshair
   vctx.strokeStyle = "rgba(220,235,255,0.85)"; vctx.lineWidth = 1.5 * k;
   vctx.shadowColor = "rgba(150,200,255,0.9)"; vctx.shadowBlur = 8 * k;
   vctx.beginPath(); vctx.arc(mx, my, 14 * k, 0, 7); vctx.stroke();
@@ -387,12 +624,10 @@ function drawHUD(t) {
     vctx.beginPath(); vctx.moveTo(mx + dx * 8 * k, my + dy * 8 * k); vctx.lineTo(mx + dx * 20 * k, my + dy * 20 * k); vctx.stroke();
   }
   vctx.shadowBlur = 0;
-  // ammo ticks
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < MAG; i++) {
     vctx.fillStyle = i < ammo ? "rgba(220,235,255,0.8)" : "rgba(220,235,255,0.12)";
     vctx.fillRect(VW - pad - (i + 1) * 9 * k, VH - pad - 22 * k, 4 * k, 22 * k);
   }
-  // health bar
   vctx.fillStyle = "rgba(200,210,225,0.12)"; vctx.fillRect(pad, VH - pad - 6 * k, 180 * k, 6 * k);
   vctx.fillStyle = hp > 30 ? "rgba(190,215,240,0.75)" : "rgba(255,60,50,0.9)";
   vctx.fillRect(pad, VH - pad - 6 * k, 180 * k * hp / 100, 6 * k);
@@ -403,6 +638,8 @@ function drawHUD(t) {
     const a = Math.min(1, msgT) * (0.7 + 0.3 * Math.random());
     glowText(msg, VW / 2, VH * 0.2, 30 * k, over === "dead" ? "255,60,50" : "220,235,255", a);
   }
+  if (helpT > 0) glowText("CLICK  SHOOT     SPACE  RELOAD", VW / 2, VH - pad - 3 * k, 12 * k, "200,215,235", Math.min(1, helpT) * 0.5);
+  if (ammo === 0 && !over) glowText("SPACE", VW - pad - 40 * k, VH - pad - 44 * k, 12 * k, "255,200,150", 0.5 + 0.5 * Math.sin(t * 8));
   if (over && msgT <= 1.5) glowText("CLICK TO RESTART", VW / 2, VH * 0.2 + 44 * k, 14 * k, "200,215,235", 0.6);
 }
 
@@ -411,9 +648,9 @@ let last = performance.now();
 function frame(ts) {
   const dt = Math.min(0.05, (ts - last) / 1000); last = ts; now = ts / 1000;
   shake = Math.max(0, shake - dt * 40); dmgFlash = Math.max(0, dmgFlash - dt);
-  muzzle = Math.max(0, muzzle - dt);
+  muzzle = Math.max(0, muzzle - dt); helpT -= dt;
   msgT = over ? Math.max(1, msgT - dt) : msgT - dt;
-  update(dt); render(now);
+  update(dt, now); render(now);
   requestAnimationFrame(frame);
 }
 addEventListener("resize", resize);
