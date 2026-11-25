@@ -772,5 +772,5 @@ const ChaseLevel = (() => {
     "p-menu": () => { hidePanel(); const m = document.getElementById("menu"); if (m) m.hidden = false; init(); },
   });
 
-  return { name: "chase", init, resize, update, render, onDown, onKey, debug: () => ({ G, cars, bikes, foes, peds, get enemy() { return foes.find(f => f.kind === "enemy" && !f.crash); } }) };
+  return { name: "chase", init, resize, update, render, onDown, onKey, debug: () => ({ G, cars, bikes, foes, peds, spawnWave, get enemy() { return foes.find(f => f.kind === "enemy" && !f.crash); } }) };
 })();
