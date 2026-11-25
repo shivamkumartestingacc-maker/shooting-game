@@ -29,15 +29,16 @@ const norm3 = v => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] /
 // ---------- state, canvases, camera ----------
 const E = { W: 0, H: 0, VW: 0, VH: 0, mouse: { x: 0, y: 0 }, level: null, keys: {}, idSeq: 0, embers: [] };
 // camera: pinhole at height camH looking down +z. zoom/fx/fy crop the view around a stage point (scope).
-const cam = { f: 1, hor: 0, cx: 0, camH: 1.6, zoom: 1, fx: 0, fy: 0 };
+const cam = { f: 1, hor: 0, cx: 0, camH: 1.6, zoom: 1, fx: 0, fy: 0, offX: 0, bend: 0 };   // offX: camera's lateral position, bend: road curvature
 let view, vctx, scene, sctx, F, fctx, C, cctx, Rm, rmctx, Wp, wpctx, half, hctx, s1, s1ctx, s2, s2ctx, vignette;
 
 // stage = unzoomed scene pixels; view = what is on screen after scope zoom
-const stage = (x, y, z) => [cam.cx + x * cam.f / z, cam.hor + (cam.camH - y) * cam.f / z];
+const stage = (x, y, z) => [cam.cx + (x - cam.offX + cam.bend * z * z) * cam.f / z, cam.hor + (cam.camH - y) * cam.f / z];
 const toView = (sx, sy) => [(sx - cam.fx) * cam.zoom + E.W / 2, (sy - cam.fy) * cam.zoom + E.H / 2];
 const toStage = (vx, vy) => [(vx - E.W / 2) / cam.zoom + cam.fx, (vy - E.H / 2) / cam.zoom + cam.fy];
 function project(x, y, z) {
-  const k = cam.f / Math.max(0.5, z), [vx, vy] = toView(cam.cx + x * k, cam.hor + (cam.camH - y) * k);
+  z = Math.max(0.5, z);
+  const k = cam.f / z, [vx, vy] = toView(cam.cx + (x - cam.offX + cam.bend * z * z) * k, cam.hor + (cam.camH - y) * k);
   return [vx, vy, k * cam.zoom];
 }
 
@@ -56,7 +57,7 @@ function engineResize() {
   for (const c of [hctx, s1ctx, s2ctx]) c.imageSmoothingQuality = "high";
   vignette = vctx.createRadialGradient(E.VW / 2, E.VH / 2, Math.min(E.VW, E.VH) * 0.25, E.VW / 2, E.VH / 2, Math.max(E.VW, E.VH) * 0.75);
   vignette.addColorStop(0, "rgba(0,0,0,0)"); vignette.addColorStop(1, "rgba(0,0,0,0.85)");
-  cam.zoom = 1; cam.fx = W / 2; cam.fy = H / 2; cam.cx = W / 2;
+  cam.zoom = 1; cam.fx = W / 2; cam.fy = H / 2; cam.cx = W / 2; cam.offX = 0; cam.bend = 0;
   E.level && E.level.resize();
 }
 
@@ -392,7 +393,7 @@ function drawFigures(list, t, opts = {}) {
       wpctx.globalAlpha = 1;
     }
   }
-  for (const p of E.embers) {
+  if (opts.embers !== false) for (const p of E.embers) {
     const u = p.age / p.life, c = COL[p.kind], rgb = u < 0.15 ? c.core : u < 0.55 ? c.aura : c.ember;
     const [x, y] = toView(p.x, p.y), s = p.size * cam.zoom * (1 - u * 0.5);
     fctx.fillStyle = `rgba(${rgb},${Math.pow(1 - u, 1.2)})`; fctx.fillRect(x - s / 2, y - s / 2, s, s);
@@ -489,6 +490,8 @@ const sfx = {
   distant: () => noise(0.4, "lowpass", 500, 0.45, 2.5),
   glass:   () => noise(0.2, "highpass", 4500, 0.18, 2),
   thud:    () => noise(0.12, "lowpass", 300, 0.4, 2),
+  ping:    () => noise(0.07, "bandpass", 3600, 0.3, 3),
+  enemy:   () => noise(0.3, "lowpass", 900, 0.5, 3),
 };
 
 // ---------- input + loop ----------

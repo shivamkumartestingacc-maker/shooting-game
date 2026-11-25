@@ -71,15 +71,17 @@
   <p>NIGHT CAMERA &nbsp;·&nbsp; ESC RETURNS HERE</p>
   <div class="levels">
     <button class="l1" id="go-bank">LEVEL 1 · CITY TRUST BANK<small>Sniper. Seven hostages, six gunmen.</small></button>
+    <button class="l1" id="go-chase">LEVEL 2 · THE GETAWAY<small>Car chase. Five armed men, breakable glass.</small></button>
     <button id="go-road">PROTOTYPE · THE ROAD<small>They walk out of the fog and grab you.</small></button>
   </div>
 </div>
 <script src="engine.js"></script>
 <script src="road.js"></script>
 <script src="bank.js"></script>
+<script src="chase.js"></script>
 <script>
   const menu = document.getElementById("menu"), canvas = document.getElementById("c");
-  const LEVELS = { bank: BankLevel, road: RoadLevel };
+  const LEVELS = { bank: BankLevel, chase: ChaseLevel, road: RoadLevel };
   function play(name) {
     menu.hidden = true;
     try { history.replaceState(null, "", "#" + name); } catch (_) {}
@@ -87,6 +89,7 @@
   }
   document.getElementById("go-bank").onclick = () => play("bank");
   document.getElementById("go-road").onclick = () => play("road");
+  document.getElementById("go-chase").onclick = () => play("chase");
   addEventListener("keydown", ev => { if (ev.code === "Escape") menu.hidden = false; });
   startEngine(canvas, BankLevel);            // bank briefing runs behind the menu
   const h = location.hash.slice(1); if (LEVELS[h]) play(h);
