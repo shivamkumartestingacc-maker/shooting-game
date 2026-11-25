@@ -89,19 +89,20 @@ const ARM = {
   aim:   s => s > 0 ? [[0.13, -0.13, -0.05], [-0.08, -0.03, -0.2]] : [[0.12, -0.15, -0.32], [0.3, -0.05, -0.56]],
   knife: s => s > 0 ? [[0.06, -0.22, -0.1], [0.0, -0.34, -0.34]] : [[-0.035, -0.29, 0.02], [-0.045, -0.56, -0.06]],
   raise: s => s > 0 ? [[0.12, 0.16, -0.06], [0.03, 0.43, -0.12]] : [[-0.02, -0.18, -0.24], [0.08, -0.26, -0.48]],
+  strap: s => s > 0 ? [[0.08, 0.25, -0.02], [0.03, 0.56, -0.03]] : [[-0.035, -0.29, 0.02], [-0.045, -0.56, -0.06]],   // right hand up on a strap
 };
-const POSE_UP = { hang: 0, head: 1, cower: 1, reach: 1, rifle: 0.4, aim: 0.4, knife: 0.2, raise: 1 };
-const POSE_CURL = { hang: 0.35, head: 0.45, cower: 0.6, reach: 0.1, rifle: 0.95, aim: 0.95, knife: 0.95, raise: 0.95 };
+const POSE_UP = { hang: 0, head: 1, cower: 1, reach: 1, rifle: 0.4, aim: 0.4, knife: 0.2, raise: 1, strap: 0.6 };
+const POSE_CURL = { hang: 0.35, head: 0.45, cower: 0.6, reach: 0.1, rifle: 0.95, aim: 0.95, knife: 0.95, raise: 0.95, strap: 0.85 };
 
 function makeFigure(o) {
   const r = mulberry((Math.random() * 1e9) | 0);
   const e = Object.assign({
     id: ++E.idSeq, kind: "orange", x: 0, z: 10, y0: 0, yaw: 0, phase: r() * 6, speed: 1.1, walkW: 0,
-    pose: "hang", kneel: 0, cower: 0, alpha: 1, hitFlash: 0, stagger: 0, dying: 0, grab: 0, tremble: 0,
+    pose: "hang", kneel: 0, sit: 0, cower: 0, alpha: 1, hitFlash: 0, stagger: 0, dying: 0, grab: 0, tremble: 0,
     weapon: null, curlOverride: null,
     style: { lean: 0.02 + r() * 0.05, tilt: (r() - 0.5) * 0.3, build: 0.9 + r() * 0.22, stride: 0.85 + r() * 0.3 },
   }, o);
-  e.kneelCur = e.kneel; e.cowerCur = e.cower;
+  e.kneelCur = e.kneel; e.cowerCur = e.cower; e.sitCur = e.sit;
   const p = ARM[e.pose];
   e.armCur = { [-1]: p(-1).map(v => v.slice()), [1]: p(1).map(v => v.slice()) };
   e.upCur = POSE_UP[e.pose]; e.curlCur = POSE_CURL[e.pose];
@@ -116,7 +117,7 @@ function animate(e, dt) {
     for (let i = 0; i < 2; i++) for (let j = 0; j < 3; j++) cur[i][j] += (tg[i][j] - cur[i][j]) * k;
   }
   e.upCur += (POSE_UP[e.pose] - e.upCur) * k; e.curlCur += (POSE_CURL[e.pose] - e.curlCur) * k;
-  e.kneelCur = ease(e.kneelCur, e.kneel, 4, dt); e.cowerCur = ease(e.cowerCur, e.cower, 4, dt);
+  e.kneelCur = ease(e.kneelCur, e.kneel, 4, dt); e.cowerCur = ease(e.cowerCur, e.cower, 4, dt); e.sitCur = ease(e.sitCur, e.sit, 4, dt);
   e.hitFlash = Math.max(0, e.hitFlash - dt); e.stagger = Math.max(0, e.stagger - dt * 2.5);
 }
 function turnTo(e, yaw, dt, rate = 5) { let d = yaw - e.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); e.yaw += d * (1 - Math.exp(-dt * rate)); }
@@ -152,7 +153,8 @@ function skeleton(e, t) {
   const bob = 0.028 * w * Math.cos(2 * Math.PI * (2 * u - 0.6));
   const sway = -0.03 * w * Math.cos(2 * Math.PI * (u - 0.3));
   const lean = s.lean + Math.max(0, e.grab) * 0.18 - e.stagger * 0.35 + cw * 0.14;
-  const py = lerp(0.92 + bob, 0.5 - cw * 0.06, kn);
+  const st = e.sitCur;
+  const py = lerp(lerp(0.92 + bob, 0.5 - cw * 0.06, kn), 0.47, st);
   const pelvis = [sway, py, 0];
   const shC = [sway * 0.4, py + 0.5 + bob * 0.8 - cw * 0.08, -lean];
   const head = [shC[0] + s.tilt * 0.03, shC[1] + 0.2 - cw * 0.05, shC[2] - 0.02 - lean * 0.35 - cw * 0.06 + e.stagger * 0.1];
@@ -165,7 +167,11 @@ function skeleton(e, t) {
       knee = lerp3(knee, [side * 0.11, 0.07, -0.06], kn);
       foot = lerp3(foot, [side * 0.1, 0.06, 0.4], kn);
     }
-    return { hip, knee, foot, toeD: lerp(-0.15, 0.13, kn) };
+    if (st > 0) {                                    // sitting: thighs forward, shins down
+      knee = lerp3(knee, [side * 0.11, 0.5, -0.42], st);
+      foot = lerp3(foot, [side * 0.12, 0.07, -0.5], st);
+    }
+    return { hip, knee, foot, toeD: lerp(lerp(-0.15, 0.13, kn), -0.15, st) };
   });
   const swingK = e.pose === "hang" ? 1 : 0.2;
   const arms = [-1, 1].map((side, i) => {
@@ -316,6 +322,13 @@ function buildWeapon(e, sk, hands, P, geom) {
     capsule(w, magTop, mag, 0.024 * magTop[2], 0.02 * mag[2]);
     capsule(w, magTop, sight, 0.014 * magTop[2], 0.016 * sight[2]);
     geom.muzzle = muz;
+  } else if (e.weapon === "pistol") {
+    const dir = norm3([R.hand[0] - R.elbow[0], R.hand[1] - R.elbow[1], R.hand[2] - R.elbow[2]]);
+    const at = s => add3(R.hand, [dir[0] * s, dir[1] * s, dir[2] * s]);
+    const a = P(at(0.0), 0), b = P(at(0.19), 0), grip = P(add3(R.hand, [0, -0.09, 0]), 0);
+    capsule(w, a, b, 0.026 * a[2], 0.02 * b[2]);
+    capsule(w, P(R.hand, 0), grip, 0.02 * grip[2], 0.018 * grip[2]);
+    geom.muzzle = b;
   } else if (e.weapon === "knife") {
     let dir = norm3([R.hand[0] - R.elbow[0], R.hand[1] - R.elbow[1], R.hand[2] - R.elbow[2]]);
     if (e.pose === "raise") dir = dir.map(v => -v);          // ice-pick grip for the overhead stab
