@@ -18,7 +18,7 @@ const ArcheryLevel = (() => {
   const PIXEL = { cell: 4, levels: 9, dots: 0.26, grain: 12, sat: 1.45, contrast: 1.3, lift: 6 };
 
   // ---------------------------------------------------------------- world layout
-  const ZONES = [[-10, 165, "forest"], [165, 238, "meadow"], [238, 333, "town"], [333, 381, "court"], [381, 446, "hall"], [446, 506, "town"], [506, 640, "forest"]];
+  const ZONES = [[-10, 165, "forest"], [165, 260, "town"], [260, 333, "meadow"], [333, 381, "court"], [381, 446, "hall"], [446, 506, "town"], [506, 640, "forest"]];
   const SCROLL = { here: true, screen: null };
   const SPECIALS = [
     // act 1: clearings where the animals show (no trees there) and hides
@@ -26,20 +26,20 @@ const ArcheryLevel = (() => {
     { type: "clearing", wz: 92, x: 0, clear: [0, 26, 6] }, { type: "clearing", wz: 130, x: 0, clear: [0, 30, 9] },
     { type: "bush", x: -1.7, wz: 15.5, s: 0.75, hide: true, clear: [2, 2, 1.5] },
     { type: "bush", x: 1.7, wz: 131.5, s: 0.75, hide: true, clear: [2, 2, 1.5] },
-    // act 2: the fort wall
-    { type: "bush", x: -1.7, wz: 205.5, s: 0.8, hide: true, clear: [2, 2, 1.5] },
-    { type: "cart", x: -1.5, wz: 215.6, hide: true, clear: [2, 2, 3] },
-    { type: "wall", wz: 238, h: 9, gate: [4.4, 5.5], towers: [-7, 7, -26, 26], portcullis: true, banners: [-14, 14], clear: [5, 6, 80] },
-    { type: "torch", x: -2.9, y: 3.6, wz: 237.85 }, { type: "torch", x: 2.9, y: 3.6, wz: 237.85 },
-    // act 3: town
-    { type: "cart", x: -1.5, wz: 253.6, hide: true, clear: [2, 2, 3] },
-    { type: "stall", x: 3.4, wz: 262, clear: [2, 2, 1.5] }, { type: "stall", x: -3.4, wz: 268, clear: [2, 2, 1.5] },
-    { type: "box", x0: 3.6, x1: 4.8, y1: 3.6, z0: 271, z1: 272.4, rgb: [70, 56, 44], clear: [2, 3, 2] },
-    { type: "walkway", side: -1, wz: 292, len: 20, h: 4.5 },
-    { type: "cart", x: 1.5, wz: 283.6, hide: true, clear: [2, 2, 3] },
-    { type: "cart", x: -1.5, wz: 313.6, hide: true, clear: [2, 2, 3] },
-    { type: "wall", wz: 333, h: 8, gate: [4.4, 5.6], towers: [-7, 7], rgb: [84, 80, 88], banners: [-3.4, 3.4], span: 70, clear: [4, 4, 80] },
-    { type: "torch", x: -3.2, y: 4.2, wz: 332.85 }, { type: "torch", x: 3.2, y: 4.2, wz: 332.85 },
+    // act 2: the town under the fort, its gate out to the fields
+    { type: "cart", x: -1.5, wz: 180.6, hide: true, clear: [2, 2, 3] },
+    { type: "stall", x: 3.4, wz: 189, clear: [2, 2, 1.5] }, { type: "stall", x: -3.4, wz: 195, clear: [2, 2, 1.5] },
+    { type: "box", x0: 3.6, x1: 4.8, y1: 3.6, z0: 198, z1: 199.4, rgb: [70, 56, 44], clear: [2, 3, 2] },
+    { type: "walkway", side: -1, wz: 219, len: 20, h: 4.5 },
+    { type: "cart", x: 1.5, wz: 210.6, hide: true, clear: [2, 2, 3] },
+    { type: "cart", x: -1.5, wz: 240.6, hide: true, clear: [2, 2, 3] },
+    { type: "wall", wz: 260, h: 8, gate: [4.4, 5.6], towers: [-7, 7], rgb: [84, 80, 88], banners: [-3.4, 3.4], span: 70, clear: [4, 4, 80] },
+    { type: "torch", x: -3.2, y: 4.2, wz: 259.85 }, { type: "torch", x: 3.2, y: 4.2, wz: 259.85 },
+    // act 3: the fields and the fort wall, then the palace courtyard inside
+    { type: "bush", x: -1.7, wz: 300.5, s: 0.8, hide: true, clear: [2, 2, 1.5] },
+    { type: "cart", x: -1.5, wz: 310.6, hide: true, clear: [2, 2, 3] },
+    { type: "wall", wz: 333, h: 9, gate: [4.4, 5.5], towers: [-7, 7, -26, 26], portcullis: true, banners: [-14, 14], clear: [5, 6, 80] },
+    { type: "torch", x: -2.9, y: 3.6, wz: 332.85 }, { type: "torch", x: 2.9, y: 3.6, wz: 332.85 },
     // act 4: palace
     { type: "bush", x: -1.6, wz: 347.5, s: 0.75, hide: true },
     { type: "wall", wz: 381, h: 14, gate: [3.6, 5], towers: [-9, 9], rgb: [92, 86, 84], banners: [-5, 5], span: 10, thick: 1.5 },
@@ -61,12 +61,12 @@ const ArcheryLevel = (() => {
     { at: 50, act: 0, name: "WOLVES" },
     { at: 92, act: 0, name: "THE BOAR" },
     { at: 130, act: 0, name: "THE STREAM", hunt: true },
-    { at: 204, act: 1, name: "THE TREE LINE", stealth: true },
-    { at: 214, act: 1, name: "THE GATE", stealth: true },
-    { at: 252, act: 2, name: "MARKET LANE", stealth: true },
-    { at: 282, act: 2, name: "THE WALL WALK", stealth: true },
-    { at: 312, act: 2, name: "PALACE GATE", stealth: true },
-    { at: 346, act: 3, name: "THE COURTYARD", stealth: true },
+    { at: 179, act: 1, name: "MARKET LANE", stealth: true },
+    { at: 209, act: 1, name: "THE WALL WALK", stealth: true },
+    { at: 239, act: 1, name: "TOWN GATE", stealth: true },
+    { at: 299, act: 2, name: "THE TREE LINE", stealth: true },
+    { at: 309, act: 2, name: "THE FORT GATE", stealth: true },
+    { at: 346, act: 2, name: "THE COURTYARD", stealth: true },
     { at: 386, act: 3, name: "THE GREAT HALL", stealth: true },
     { at: 404, act: 3, name: "THE KING'S CHAMBER", stealth: true },
     { at: 409.5, act: 3, name: "THE SCROLL", scroll: true },
@@ -76,17 +76,17 @@ const ArcheryLevel = (() => {
     { at: 522, act: 4, name: "INTO THE WOODS" },
   ];
   const ACTS = [
-    { d: 0, name: "THE FOREST", quiver: 16 },
-    { d: 168, name: "THE FORT", quiver: 16 },
-    { d: 240, name: "THE TOWN", quiver: 18 },
-    { d: 336, name: "THE PALACE", quiver: 18 },
-    { d: 409.5, name: "ESCAPE", quiver: 20 },
+    { d: 0, name: "THE FOREST" },
+    { d: 165, name: "THE TOWN" },
+    { d: 263, name: "THE FORT" },
+    { d: 378, name: "THE PALACE" },
+    { d: 409.5, name: "ESCAPE" },
   ];
   let W, H, G, figs, arrows, stuck, foeArrows;
 
   // ---------------------------------------------------------------- setup
   function init(act = 0) {
-    G = { phase: "brief", act, hp: 100, food: 100, quiver: ACTS[act].quiver, nock: 0, zk: 0, zoomHeld: false,
+    G = { phase: "brief", act, hp: 100, food: 100, quiver: Infinity, nock: 0, zk: 0, zoomHeld: false,
       shake: 0, dmg: 0, msg: "", msgT: 0, big: "", bigT: 0, time: 0, shots: 0, hits: 0, kills: 0, food0: 0, endT: 0, reason: "",
       stop: -1, speed: 0, clearT: 0, fighting: false, alert: false, alarm: act === 4, scroll: act === 4, skip: false, bob: 0, helpT: 9,
       sparks: [], dust: [], tracers: [], bodies: [], camH: EYE, release: 0, crackT: 0, reinf: false, losT: 0, ate: new Set(), actShown: act - 1 };
@@ -122,74 +122,74 @@ const ArcheryLevel = (() => {
   function encounter(i) {
     G.stop = i; G.fighting = true; G.alert = G.alarm; G.reinf = false; G.skip = false; say(STOPS[i].name, 2.4);
     const D = S.D;
-    switch (i) {
-      case 0:
+    switch (STOPS[i].name) {
+      case "THE CLEARING":
         animal("deer", 2.6, D + 9, { yaw: 1.2 }); animal("deer", -3.4, D + 13, { yaw: -0.6, antlers: false }); animal("deer", 0.8, D + 18, { yaw: 2.6 });
         break;
-      case 1:
+      case "WOLVES":
         sfx.howl();
         animal("wolf", -13, D + 11, { delay: 0.6 }); animal("wolf", 12, D + 15, { delay: 2.2 }); animal("wolf", 1.5, D + 28, { delay: 3.6 }); animal("wolf", -7, D + 24, { delay: 6 });
         break;
-      case 2:
+      case "THE BOAR":
         animal("boar", 0.8, D + 18, { delay: 0.8 });
         animal("deer", -14, D + 14, { st: "flee", fleeTo: [16, D + 30], yaw: -1.6, speed: 7.5 });
         break;
-      case 3:
+      case "THE STREAM":
         animal("deer", -2.6, D + 10, { yaw: 0.8 }); animal("deer", 3.6, D + 14, { yaw: -1.9 }); animal("deer", -1.2, D + 20, { yaw: 2.2, antlers: false });
         animal("wolf", -15, D + 26, { delay: 9 }); animal("wolf", 15, D + 22, { delay: 10.5 });
         break;
-      case 4:
-        guard("archer", -3, 238.9, { y0: 9, patrol: [[-3.6, 238.9], [3.6, 238.9]] });
-        guard("archer", 12, 238.9, { y0: 9, patrol: [[10, 238.9], [21, 238.9]], pi: 1 });
-        guard("spear", -1.6, 236.4, { yaw: 0.2 });
+      case "THE TREE LINE":
+        guard("archer", -3, 333.9, { y0: 9, patrol: [[-3.6, 333.9], [3.6, 333.9]] });
+        guard("archer", 12, 333.9, { y0: 9, patrol: [[10, 333.9], [21, 333.9]], pi: 1 });
+        guard("spear", -1.6, 331.4, { yaw: 0.2 });
         break;
-      case 5:
-        guard("spear", -1.8, 236.6, { yaw: 0.3 }); guard("spear", 1.8, 236.6, { yaw: -0.3 });
-        guard("sword", -9, 235.4, { patrol: [[-10, 235.4], [-3, 234.8]] });
-        guard("archer", -13, 238.9, { y0: 9, patrol: [[-20, 238.9], [-11, 238.9]] });
+      case "THE FORT GATE":
+        guard("spear", -1.8, 331.6, { yaw: 0.3 }); guard("spear", 1.8, 331.6, { yaw: -0.3 });
+        guard("sword", -9, 330.4, { patrol: [[-10, 330.4], [-3, 329.8]] });
+        guard("archer", -13, 333.9, { y0: 9, patrol: [[-20, 333.9], [-11, 333.9]] });
         break;
-      case 6:
+      case "MARKET LANE":
         folk(3.6, D + 9); folk(-3.8, D + 14); folk(3.2, D + 22, { yaw: Math.PI });
         guard("sword", -1.5, D + 30, { patrol: [[-1.5, D + 30], [-1.2, D + 12]] }); guard("sword", 1.4, D + 32, { patrol: [[1.4, D + 32], [1.6, D + 14]] });
-        guard("archer", 4.2, 271.7, { y0: 3.6, yaw: -0.4 });
+        guard("archer", 4.2, 198.7, { y0: 3.6, yaw: -0.4 });
         break;
-      case 7:
+      case "THE WALL WALK":
         folk(3.5, D + 8, { yaw: Math.PI }); folk(-3.2, D + 20);
-        guard("archer", -5.6, 300, { y0: 4.5, patrol: [[-5.6, 298], [-5.6, 309]] }); guard("archer", -5.6, 305, { y0: 4.5, yaw: 0.5 });
+        guard("archer", -5.6, 227, { y0: 4.5, patrol: [[-5.6, 225], [-5.6, 236]] }); guard("archer", -5.6, 232, { y0: 4.5, yaw: 0.5 });
         guard("sword", 2, D + 24, { patrol: [[2, D + 24], [-2, D + 13]] });
         break;
-      case 8:
-        guard("shield", -1.9, 331.8, { yaw: 0.15 }); guard("shield", 1.9, 331.8, { yaw: -0.15 });
-        guard("archer", -3.4, 333.9, { y0: 8, patrol: [[-4, 333.9], [-0.5, 333.9]] }); guard("archer", 3.4, 333.9, { y0: 8, yaw: -0.2 });
+      case "TOWN GATE":
+        guard("shield", -1.9, 258.8, { yaw: 0.15 }); guard("shield", 1.9, 258.8, { yaw: -0.15 });
+        guard("archer", -3.4, 260.9, { y0: 8, patrol: [[-4, 260.9], [-0.5, 260.9]] }); guard("archer", 3.4, 260.9, { y0: 8, yaw: -0.2 });
         break;
-      case 9:
+      case "THE COURTYARD":
         folk(-5.5, D + 12, { role: "folk", st: "stand" }); folk(5.2, D + 20, { st: "stand", yaw: -0.5 });
         guard("sword", -5, D + 14, { patrol: [[-5, D + 14], [5, D + 16]] }); guard("sword", 5, D + 24, { patrol: [[5, D + 24], [-5, D + 22]] });
         guard("shield", 0, 379.6, { hp: 2 }); guard("archer", 5.5, D + 30, { yaw: -0.4 });
         break;
-      case 10:
+      case "THE GREAT HALL":
         folk(3, D + 9, { st: "stand", yaw: -0.8 });
         guard("sword", -2.5, D + 9, { hp: 2, patrol: [[-2.5, D + 9], [-2.5, D + 14.5]] }); guard("shield", 2.5, D + 13, { hp: 2, patrol: [[2.5, D + 13], [2.5, D + 7]] });
         guard("archer", -3, 400.6, { hp: 2, yaw: 0.2 });
         break;
-      case 11:
+      case "THE KING'S CHAMBER":
         guard("shield", -0.6, 413.6, { hp: 2, yaw: Math.PI }); guard("sword", 2.6, 417.5, { hp: 2, patrol: [[2.6, 417.5], [2.6, 410.5]] });
         guard("archer", 3.2, 420.5, { hp: 2, yaw: -0.3 }); folk(-2.8, 420.5, { st: "stand", yaw: 0.6 });
         break;
-      case 12: break;                              // the scroll: click it
-      case 13:
+      case "THE SCROLL": break;                              // the scroll: click it
+      case "ALARM":
         guard("sword", -1, D + 9, { delay: 0.3 }); guard("sword", 1.4, D + 13, { delay: 1.2 }); guard("archer", 0.6, D + 16, { delay: 0.8 });
         break;
-      case 14:
+      case "THE BURNING TOWN":
         folk(3.6, D + 10, { st: "flee" }); folk(-3.5, D + 15, { st: "flee" });
         guard("archer", -4.2, 466.7, { y0: 3.4, delay: 0.5 }); guard("sword", 3.6, D + 12, { delay: 1 }); guard("sword", -3.4, D + 20, { delay: 2.4 });
         guard("archer", 2, D + 26, { delay: 3 }); guard("spear", 0, D + 30, { delay: 5 });
         break;
-      case 15:
+      case "THE POSTERN GATE":
         guard("spear", -1.6, 504.6, { delay: 0.5 }); guard("spear", 1.6, 504.6, { delay: 1.5 });
         guard("archer", -4, 506.8, { y0: 8, delay: 0.8 }); guard("archer", 5, 506.8, { y0: 8, delay: 2 });
         break;
-      case 16:
+      case "INTO THE WOODS":
         sfx.howl(); animal("wolf", -12, D + 12, { delay: 0.5 }); animal("wolf", 11, D + 16, { delay: 1.8 }); animal("wolf", 0.5, D + 26, { delay: 3 });
         break;
     }
@@ -230,7 +230,6 @@ const ArcheryLevel = (() => {
       const act = ACTS.reduce((a, A, i) => (i === 4 ? G.scroll : S.D >= A.d - 0.01) ? i : a, 0);
       if (act !== G.actShown) {
         G.actShown = act; G.act = act; G.big = `ACT ${act + 1}  ·  ${ACTS[act].name}`; G.bigT = 3.2;
-        if (G.quiver < ACTS[act].quiver - 4) { G.quiver = ACTS[act].quiver - 4; say("FOUND ARROWS  ·  QUIVER RESTOCKED", 2); }
       }
       if (S.D >= END_D) { G.phase = "clearing"; G.endT = 0; say("YOU GOT AWAY", 2.5); }
     }
@@ -435,8 +434,8 @@ const ArcheryLevel = (() => {
   // ---------------------------------------------------------------- your arrows
   // crossbow: the bolt goes exactly where the crosshair points, instantly (a ray, no drop)
   function loosePlayer(t) {
-    if (G.quiver <= 0 || G.phase !== "play") return;
-    G.quiver--; G.shots++; G.nock = NOCK; G.release = 0.18; sfx.twang(1.3); setTimeout(() => sfx.reload(), NOCK * 900);
+    if (G.phase !== "play") return;
+    G.shots++; G.nock = NOCK; G.release = 0.18; sfx.twang(1.3); setTimeout(() => sfx.reload(), NOCK * 900);
     const [ax, ay] = aimPoint(t), [sx, sy] = toStage(ax, ay);
     const d = norm3([(sx - cam.cx) / cam.f, (cam.hor - sy) / cam.f, 1]), o = [cam.offX, cam.camH, S.D];
     const bolt = { v: [d[0] * 80, d[1] * 80, d[2] * 80] };
@@ -512,7 +511,6 @@ const ArcheryLevel = (() => {
     } else say(head ? "HEADSHOT" : "DOWN", 0.9);
     if (f.guard) {
       G.bodies.push({ x: f.x, wz: f.z + S.D });
-      if (f.role === "archer") G.bodies[G.bodies.length - 1].quiver = { x: f.x, wz: f.z + S.D, y: f.y0, n: 3 };
       // anyone watching him drop
       for (const o of figs) if (o.guard && !o.dying && o !== f && o.st !== "alert") {
         const bx = f.x - o.x, bz = f.z - o.z, ang = Math.abs(Math.atan2(Math.sin(Math.atan2(bx, -bz) - o.yaw), Math.cos(Math.atan2(bx, -bz) - o.yaw)));
@@ -559,14 +557,13 @@ const ArcheryLevel = (() => {
       const z = a.p[2] - S.D;
       if (z < 1.3 && z > -1 && Math.abs(a.p[0] - cam.offX) < 7 && a.p[1] < 2.6) {
         a.taken = true;
-        if (a.keep && G.quiver < MAXQ) { G.quiver++; flashPick("+1 ARROW"); }
       }
     }
     stuck = stuck.filter(a => !a.taken);
     for (const b of G.bodies) {
       const q = b.quiver; if (!q || q.taken) continue;
       const z = q.wz - S.D;
-      if (z < 1.3 && Math.abs(q.x - cam.offX) < 6 && q.y < 0.5) { q.taken = true; G.quiver = Math.min(MAXQ, G.quiver + q.n); flashPick(`+${q.n} ARROWS`); }
+      if (z < 1.3 && Math.abs(q.x - cam.offX) < 6 && q.y < 0.5) q.taken = true;
     }
     for (const it of S.items) if (it.type === "stall" && !G.ate.has(it) && it.wz - S.D < 1.5) { G.ate.add(it); G.food = Math.min(100, G.food + 25); flashPick("BREAD  ·  FOOD +25"); }
   }
@@ -592,16 +589,15 @@ const ArcheryLevel = (() => {
     if (b === 2) { G.zoomHeld = true; return; }
     if (b !== 0 || G.phase !== "play") return;
     const st = STOPS[G.stop];
-    if (st && st.scroll && SCROLL.here && SCROLL.screen && foesLeft() === 0) {
-      const [sx, sy, r] = SCROLL.screen, k = 1 / SCALE;
-      if (Math.hypot(E.mouse.x - sx * k, E.mouse.y - sy * k) < Math.max(28, r * k * 1.6)) return takeScroll();
-    }
+    if (st && st.scroll && SCROLL.here && foesLeft() === 0) return takeScroll();   // at the pedestal any click takes it
     if (G.quiver <= 0) { sfx.empty(); say("QUIVER EMPTY", 1.2); return; }
     if (G.nock > 0) return;
     loosePlayer(performance.now() / 1000);       // one click, one arrow
   }
   function onUp(b) { if (b === 2) G.zoomHeld = false; }
   function onKey(code) {
+    const st0 = STOPS[G.stop];
+    if ((code === "KeyE" || code === "Space") && G.phase === "play" && st0 && st0.scroll && SCROLL.here && foesLeft() === 0) return takeScroll();
     if (code === "Space" && G.phase === "play" && G.fighting) {
       const st = STOPS[G.stop];
       if (st && st.hunt && foesLeft() === 0) { G.skip = true; say("MOVING ON", 1); }
@@ -612,7 +608,6 @@ const ArcheryLevel = (() => {
     SCROLL.here = false; G.scroll = true; G.alarm = true; G.alert = true; G.fighting = false;
     sfx.shout(); setTimeout(() => sfx.shout(), 500);
     say("THE SCROLL IS YOURS — RUN", 2.6);
-    G.quiver = Math.max(G.quiver, ACTS[4].quiver);
   }
 
   // ---------------------------------------------------------------- render
@@ -635,7 +630,6 @@ const ArcheryLevel = (() => {
     for (const a of stuck) { const wz = a.fig ? a.fig.z + S.D + a.off[2] - 0.05 : a.p[2]; extra.push({ wz, x: a.fig ? a.fig.x + a.off[0] : a.p[0], ext: 0.5, fn: () => drawStuck(a, t) }); }
     for (const a of arrows) extra.push({ wz: a.p[2], x: a.p[0], ext: 0.8, fn: () => drawFlying(a, [40, 30, 22], [230, 225, 210]) });
     for (const a of foeArrows) extra.push({ wz: a.p[2], x: a.p[0], ext: 0.8, fn: () => drawFlying(a, [30, 10, 8], [255, 130, 110]) });
-    for (const b of G.bodies) if (b.quiver && !b.quiver.taken && b.quiver.y < 0.5) extra.push({ wz: b.quiver.wz + 0.1, fn: () => drawQuiver(b.quiver) });
     K.draw(t, flush, extra);
     effects(t);
     bow(t);
@@ -832,7 +826,7 @@ const ArcheryLevel = (() => {
     const qx = VW - pad - 150 * k, qy = VH - pad - 70 * k;
     plate(qx, qy, 150 * k, 70 * k, k, G.quiver ? GOLD : "#ff6a50");
     icon("arrow", qx + 14 * k, qy + 12 * k, 5 * k, G.quiver ? INK : "#ff6a50");
-    txt(`×${G.quiver}`, qx + 48 * k, qy + 37 * k, 26 * k, G.quiver ? INK : "#ff6a50");
+    txt("×∞", qx + 48 * k, qy + 37 * k, 26 * k, G.quiver ? INK : "#ff6a50");
     for (const e of figs) {                         // arrows at the screen edge for anything hostile out of frame
       if (!(e.foe) || e.dying || e.st === "delay" || !e.geom || (e.guard && !G.alert)) continue;
       const [hx, hy] = e.geom.head, x = hx / SCALE * k, y = hy / SCALE * k, m = 30 * k;
@@ -853,7 +847,7 @@ const ArcheryLevel = (() => {
     if (G.msgT > 0) txt(G.msg, VW / 2, VH * 0.2, 22 * k, INK, "center", Math.min(1, G.msgT));
     const stp = STOPS[G.stop], hint = (s, col) => { const w = txt(s, -999, -999, 14 * k) + 30 * k; plate(VW / 2 - w / 2, VH * 0.27 - 16 * k, w, 32 * k, k, col, 0.75); txt(s, VW / 2, VH * 0.27, 14 * k, col, "center", 0.7 + 0.3 * Math.sin(t * 5)); };
     if (play && G.fighting && stp && stp.hunt && foesLeft() === 0 && preyLeft() > 0) hint("SPACE  ·  MOVE ON", "#b8d040");
-    if (play && stp && stp.scroll && SCROLL.here && foesLeft() === 0) hint("CLICK THE SCROLL TO TAKE IT", GOLD);
+    if (play && stp && stp.scroll && SCROLL.here && foesLeft() === 0) hint("CLICK OR PRESS E  ·  TAKE THE SCROLL", GOLD);
     if (play && G.quiver === 0 && arrows.length === 0) txt("QUIVER EMPTY — PICK ARROWS UP AS YOU WALK", VW / 2, VH * 0.33, 13 * k, "#ff9a70", "center");
     if (play && G.helpT > 0) {                    // key caps
       const a = Math.min(1, G.helpT), keys = [["LMB", "fire"], ["RMB", "zoom"], ["ESC", "menu"]];
@@ -871,13 +865,13 @@ const ArcheryLevel = (() => {
     const a = G.act;
     showPanel(`
       <p class="eyebrow">The Archer · Act ${a + 1} of 5</p>
-      <h2>${["Into the woods", "The fort wall", "The town", "The palace", "Escape"][a]}</h2>
+      <h2>${["Into the woods", "The town", "The fort wall", "The palace", "Escape"][a]}</h2>
       <p class="lede">${[
-        "Night woods. Your crossbow, a quiver of bolts, nothing to eat. Hunt to stay alive. Then get into the fort, through the town and the palace, take the king's scroll and get out alive.",
-        "The edge of the woods and the fort wall. Archers walk the top, spearmen hold the gate. Get in unseen: shoot from cover, aim for heads.",
-        "Night streets inside the walls. Patrols, archers on the walls, townsfolk out late. Never hit a townsperson.",
-        "Courtyard, great hall, then the king's chamber. The palace guard wears mail: body shots need two arrows. Shields stop arrows; heads don't.",
-        "The scroll is yours and every guard knows it. Back through the corridors, the town and the postern gate into the woods.",
+        "Night woods. Your crossbow and endless bolts, nothing to eat. Hunt to stay alive. Then through the town, over the fort wall and into the palace: take the king's scroll and get out alive.",
+        "The town under the fort, out late. Patrols in the lanes, archers on the walls, townsfolk everywhere. Never hit a townsperson.",
+        "Fields under the fort wall. Archers walk the top, spearmen hold the gate. Get in unseen from cover, then cross the palace courtyard.",
+        "The great hall, then the king's chamber. Palace guards wear mail: body shots need two bolts. Shields stop bolts; heads don't. Take the scroll.",
+        "The scroll is yours and every guard knows it. Out through the corridors, the back streets and the postern gate into the woods.",
       ][a]}</p>
       <ul class="legend">
         <li><i class="dot green"></i><span><b>Prey</b>: deer are food. They bolt if an arrow lands near.</span></li>

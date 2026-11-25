@@ -20,13 +20,13 @@ const URL = "file://" + require("path").resolve(__dirname, "../index.html");
     }, name).catch(e => "ERR " + e.message);
     console.log(`level ${name}: ${r}`); if (r !== "ok") fail++;
   }
-  const acts = process.argv[2] ? process.argv[2].split(",").map(Number) : [0, 1, 2, 3, 4];
+  const acts = process.argv[2] === "stealth" ? [] : process.argv[2] ? process.argv[2].split(",").map(Number) : [0, 1, 2, 3, 4];
   for (const act of acts) {
     const r = await p.evaluate(act => {
       const A = ArcheryLevel; if (E.level !== A) setLevel(A); A.start(act);
       const d = () => A.debug(), K = 1 / SCALE;
       let t = 0, frames = 0, draws = 0;
-      const startStop = d().G.stop, endD = [168, 240, 336, 409.5, 546][act];
+      const startStop = d().G.stop, endD = [165, 263, 378, 409.5, 546][act];
       while (frames < 60 * 240) {
         const { G, figs, S, STOPS, SCROLL } = d();
         if (G.phase !== "play" && G.phase !== "clearing") break;
@@ -54,15 +54,15 @@ const URL = "file://" + require("path").resolve(__dirname, "../index.html");
       const { G, S } = d();
       return { act: act + 1, phase: G.phase, reason: G.reason, D: +S.D.toFixed(1), stopsDone: G.stop - startStop, hp: Math.round(G.hp), food: Math.round(G.food), quiver: G.quiver, shots: G.shots, hits: G.hits, kills: G.kills, secs: +(frames / 60).toFixed(1), scroll: G.scroll };
     }, act);
-    const ok = r.phase !== "fail" && r.D >= [168, 240, 336, 409.5, 546][act] - 0.5;
+    const ok = r.phase !== "fail" && r.D >= [165, 263, 378, 409.5, 546][act] - 0.5;
     console.log(`archery act ${r.act}: ${ok ? "PASS" : "FAIL"}`, JSON.stringify(r)); if (!ok) fail++;
   }
-  // stealth at THE GATE: hidden + idle stays unseen; an arrow thudding near a guard draws him; standing exposed gets you seen
-  if (!process.argv[2]) {
+  // stealth at THE FORT GATE: hidden + idle stays unseen; an arrow thudding near a guard draws him; standing exposed gets you seen
+  if (!process.argv[2] || process.argv[2] === "stealth") {
     const r = await p.evaluate(() => {
-      const A = ArcheryLevel; if (E.level !== A) setLevel(A); A.start(1);
+      const A = ArcheryLevel; if (E.level !== A) setLevel(A); A.start(2);
       const d = () => A.debug(), step = n => { for (let i = 0; i < n; i++) { A.update(1 / 60, i / 60); if (i % 6 === 0) A.render(i / 60); } };
-      const i = d().STOPS.findIndex(s => s.name === "THE GATE"); d().S.D = d().STOPS[i].at - 0.3; d().G.stop = i - 1;
+      const i = d().STOPS.findIndex(s => s.name === "THE FORT GATE"); d().S.D = d().STOPS[i].at - 0.3; d().G.stop = i - 1;
       step(60 * 6);
       const out = { hidden: d().G.hidden, alertAfterIdle: d().G.alert, maxSus: Math.max(...d().figs.filter(f => f.guard).map(f => f.sus)).toFixed(2) };
       // drop an arrow at the feet of the left spearman
