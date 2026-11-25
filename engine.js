@@ -10,6 +10,7 @@ const COL = {
   orange: { core: "255,214,160", aura: "255,96,16",  ember: "190,40,6" },   // armed with knives, stones
   red:    { core: "255,180,165", aura: "255,30,22",  ember: "150,10,5" },   // armed with guns
   blue:   { core: "210,238,255", aura: "50,140,255", ember: "20,60,160" },  // civilians, never shoot
+  green:  { core: "248,244,190", aura: "176,206,58", ember: "96,112,18" },  // prey animals: food, not enemies
 };
 const SCALE = 0.7;   // scene renders below screen res, upscaled soft
 
@@ -90,9 +91,12 @@ const ARM = {
   knife: s => s > 0 ? [[0.06, -0.22, -0.1], [0.0, -0.34, -0.34]] : [[-0.035, -0.29, 0.02], [-0.045, -0.56, -0.06]],
   raise: s => s > 0 ? [[0.12, 0.16, -0.06], [0.03, 0.43, -0.12]] : [[-0.02, -0.18, -0.24], [0.08, -0.26, -0.48]],
   strap: s => s > 0 ? [[0.08, 0.25, -0.02], [0.03, 0.56, -0.03]] : [[-0.035, -0.29, 0.02], [-0.045, -0.56, -0.06]],   // right hand up on a strap
+  bow:   s => s > 0 ? [[0.16, 0.02, 0.14], [-0.06, 0.1, -0.1]] : [[-0.06, -0.02, -0.3], [-0.02, 0.0, -0.6]],     // left arm out with the bow, right hand drawn to the chin
+  bowdn: s => s > 0 ? [[0.035, -0.29, 0.02], [0.045, -0.56, -0.06]] : [[-0.05, -0.26, -0.08], [-0.04, -0.48, -0.22]],  // bow held low
+  shield: s => s > 0 ? [[0.06, -0.22, -0.1], [0.0, -0.34, -0.34]] : [[-0.06, -0.2, -0.22], [0.12, -0.12, -0.36]], // sword low, shield across the chest
 };
-const POSE_UP = { hang: 0, head: 1, cower: 1, reach: 1, rifle: 0.4, aim: 0.4, knife: 0.2, raise: 1, strap: 0.6 };
-const POSE_CURL = { hang: 0.35, head: 0.45, cower: 0.6, reach: 0.1, rifle: 0.95, aim: 0.95, knife: 0.95, raise: 0.95, strap: 0.85 };
+const POSE_UP = { hang: 0, head: 1, cower: 1, reach: 1, rifle: 0.4, aim: 0.4, knife: 0.2, raise: 1, strap: 0.6, bow: 0.4, bowdn: 0.2, shield: 0.3 };
+const POSE_CURL = { hang: 0.35, head: 0.45, cower: 0.6, reach: 0.1, rifle: 0.95, aim: 0.95, knife: 0.95, raise: 0.95, strap: 0.85, bow: 0.95, bowdn: 0.95, shield: 0.95 };
 
 function makeFigure(o) {
   const r = mulberry((Math.random() * 1e9) | 0);
@@ -240,6 +244,7 @@ function capsule(path, a, b, ra, rb) {
 const TORSO = [[1.06, 0.055], [1.02, 0.11], [0.96, 0.165], [0.84, 0.172], [0.64, 0.15], [0.44, 0.125], [0.2, 0.14], [0.02, 0.15], [-0.08, 0.075]];
 
 function buildBody(e, t) {
+  if (e.body === "quad") return buildQuad(e, t);
   const sk = skeleton(e, t), tick = Math.floor(t * 14), cy = Math.cos(e.yaw), sy = Math.sin(e.yaw);
   let n = 0, minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
   const P = (j, jit = 1) => {
@@ -282,7 +287,108 @@ function buildBody(e, t) {
   }
   const geom = { path, head: [hd[0], hd[1], 0.11 * hd[2]], feetY: maxY, kb: cam.f / e.z * cam.zoom,
                  chest: T(0.75, 0, 1), box: [minX, minY, maxX, maxY] };
-  if (e.weapon) buildWeapon(e, sk, hands, P, geom);
+  if (e.weapon || e.shield) buildWeapon(e, sk, hands, P, geom);
+  return geom;
+}
+
+// =====================================================================
+// Quadrupeds: same local frame and glow pipeline as people (yaw 0 faces
+// the camera, forward is -d). Four two-bone legs on a walk / trot /
+// gallop cycle, neck + head that drop to graze, tail, and antlers or
+// tusks as dark solids. Set e.body = "quad", e.species = wolf|deer|boar.
+// Death reuses updateDeath: the body rolls onto its side, then burns.
+// =====================================================================
+const QUAD = {
+  wolf: { len: 0.95, hgt: 0.7, body: 0.16, haunch: 0.13, neck: 0.3, neckA: 0.45, headD: 0.65, headL: 0.3, head: 0.085, leg: 0.05, tail: 0.42, tailA: -0.5, ears: 0.11, w: 0.1 },
+  deer: { len: 1.05, hgt: 0.98, body: 0.19, haunch: 0.17, neck: 0.52, neckA: 1.05, headD: 1.35, headL: 0.3, head: 0.075, leg: 0.036, tail: 0.13, tailA: 0.5, ears: 0.13, w: 0.1, antlers: true },
+  boar: { len: 1.0, hgt: 0.62, body: 0.26, haunch: 0.22, neck: 0.16, neckA: 0.15, headD: 0.35, headL: 0.42, head: 0.13, leg: 0.055, tail: 0.16, tailA: -1.1, ears: 0.08, w: 0.13, tusks: true },
+};
+const GAITS = {             // phase offsets per leg [FL, FR, HL, HR] and the share of the cycle a hoof is planted
+  walk:   { off: [0.25, 0.75, 0, 0.5], stance: 0.65 },
+  trot:   { off: [0, 0.5, 0.5, 0], stance: 0.5 },
+  gallop: { off: [0.1, 0.0, 0.6, 0.5], stance: 0.35 },
+};
+function quadSkeleton(e, t) {
+  const Q = QUAD[e.species], w = clamp(e.walkW, 0, 1), v = e.speed * w;
+  const gait = GAITS[v > 4 ? "gallop" : v > 1.9 ? "trot" : "walk"];
+  // planted hooves move at ground speed: walkTo advances the phase assuming STANCE, so scale the stride
+  const S = STRIDE * e.style.stride * w * gait.stance / STANCE;
+  const u0 = ((e.phase / (Math.PI * 2)) % 1 + 1) % 1, gal = gait === GAITS.gallop ? 1 : 0;
+  const bob = (0.025 + gal * 0.05) * w * Math.cos(Math.PI * 4 * u0), flex = gal * w * Math.sin(Math.PI * 2 * u0) * 0.07;
+  const graze = e.grazeCur || 0, alertUp = e.alertCur || 0;
+  const wi = [0, Q.hgt + bob, -Q.len / 2 + flex], hip = [0, Q.hgt * 0.97 + bob * 0.6, Q.len / 2 - flex];
+  const na = lerp(Q.neckA + alertUp * 0.35, -1.0, graze) - gal * w * 0.25;
+  const nb = [0, wi[1] + 0.02, wi[2] - 0.02];
+  const hb = [0, nb[1] + Math.sin(na) * Q.neck, nb[2] - Math.cos(na) * Q.neck];
+  const ha = na - lerp(Q.headD, 0.4, graze);
+  const snout = [0, hb[1] + Math.sin(ha) * Q.headL, hb[2] - Math.cos(ha) * Q.headL];
+  const ta = Q.tailA + Math.sin(t * 3 + e.id) * 0.15 * (1 - w) + w * 0.3;
+  const tail = [0, hip[1] + Math.sin(ta) * Q.tail, hip[2] + Math.cos(ta) * Q.tail * 0.9 + 0.04];
+  const legs = [[-1, 0], [1, 0], [-1, 1], [1, 1]].map(([side, rear], i) => {
+    const [fd, lift] = footGait(((u0 + gait.off[i]) % 1 + 1) % 1, S, w), base = rear ? hip : wi;
+    const top = [side * Q.w, base[1] - Q.body * 0.4, base[2] + (rear ? -0.05 : 0.06)];
+    const foot = [side * Q.w * 0.9, 0.04 + lift * 1.2, base[2] + fd];
+    return { side, rear, top, foot, knee: bend(top, foot, (top[1] - 0.04) * 0.56, rear ? 1 : -1) };
+  });
+  const sk = { Q, wi, hip, nb, hb, snout, tail, legs };
+  if (e.fall) {                                     // roll onto the side around the spine
+    const a = e.fall * e.fallSide, c = Math.cos(a), sn = Math.sin(a), py0 = Q.body * 0.9;
+    const R = j => { const x = j[0], y = j[1] - py0; j[0] = x * c - y * sn; j[1] = py0 + x * sn + y * c; };
+    [wi, hip, nb, hb, snout, tail].forEach(R);
+    for (const L of legs) [L.top, L.knee, L.foot].forEach(R);
+  }
+  return sk;
+}
+// two equal bones from a to b; the joint pushes toward +d (dir 1, hocks) or -d (dir -1, knees)
+function bend(a, b, L, dir) {
+  const m = lerp3(a, b, 0.5), dy = b[1] - a[1], dd = b[2] - a[2], D = Math.hypot(dy, dd) || 1e-4, h = Math.sqrt(Math.max(0, L * L - D * D / 4));
+  let py = -dd / D, pd = dy / D; if (Math.sign(pd) !== dir) { py = -py; pd = -pd; }
+  return [m[0], m[1] + py * h, m[2] + pd * h];
+}
+function buildQuad(e, t) {
+  const sk = quadSkeleton(e, t), Q = sk.Q, tick = Math.floor(t * 14), cy = Math.cos(e.yaw), sy = Math.sin(e.yaw);
+  let n = 0, minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+  const P = (j, jit = 1) => {
+    const [vx, vy, k] = project(e.x + j[0] * cy - j[2] * sy, e.y0 + j[1], e.z + j[0] * sy + j[2] * cy);
+    const x = vx + (hash(e.id, n, tick) - 0.5) * 0.012 * k * jit, y = vy + (hash(e.id, n + 400, tick) - 0.5) * 0.012 * k * jit;
+    n++; minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+    return [x, y, k];
+  };
+  const path = new Path2D(), dark = new Path2D(), bw = e.style.build;
+  const mid = lerp3(sk.wi, sk.hip, 0.5), chestLow = [0, sk.wi[1] - Q.body * 0.35, sk.wi[2] + 0.06];
+  const W0 = P(sk.wi), M = P(mid), H0 = P(sk.hip), CL = P(chestLow);
+  capsule(path, W0, M, Q.body * bw * W0[2], Q.body * 0.92 * bw * M[2]);
+  capsule(path, M, H0, Q.body * 0.92 * bw * M[2], Q.haunch * bw * H0[2]);
+  circle(path, CL[0], CL[1], Q.body * 0.85 * bw * CL[2]);
+  const NB = P(sk.nb), HB = P(sk.hb), SN = P(sk.snout), TL = P(sk.tail);
+  capsule(path, NB, HB, Q.body * 0.62 * NB[2], Q.head * 1.05 * HB[2]);
+  capsule(path, HB, SN, Q.head * HB[2], Q.head * 0.5 * SN[2]);
+  capsule(path, H0, TL, Q.haunch * 0.28 * H0[2], 0.022 * TL[2]);
+  for (const s of [-1, 1]) {                         // ears
+    const ea = P([s * 0.05, sk.hb[1] + 0.02, sk.hb[2] + 0.03]), eb = P([s * 0.08, sk.hb[1] + Q.ears, sk.hb[2] + 0.06]);
+    capsule(path, ea, eb, 0.03 * ea[2], 0.008 * eb[2]);
+  }
+  for (const L of sk.legs) {
+    const a = P(L.top), k = P(L.knee), f = P(L.foot);
+    capsule(path, a, k, Q.leg * 1.7 * a[2], Q.leg * k[2]);
+    capsule(path, k, f, Q.leg * k[2], Q.leg * 0.7 * f[2]);
+  }
+  if (Q.antlers && e.antlers !== false) {           // antlers: dark solid branches off the skull
+    for (const s of [-1, 1]) {
+      const b = [s * 0.05, sk.hb[1] + 0.05, sk.hb[2] + 0.02], m1 = [s * 0.2, b[1] + 0.26, b[2] + 0.12], tip = [s * 0.26, b[1] + 0.52, b[2] + 0.02];
+      const t1 = [s * 0.13, b[1] + 0.34, b[2] - 0.08], t2 = [s * 0.32, b[1] + 0.4, b[2] + 0.2];
+      const pb = P(b, 0), p1 = P(m1, 0);
+      capsule(dark, pb, p1, 0.016 * pb[2], 0.012 * p1[2]); capsule(dark, p1, P(tip, 0), 0.012 * p1[2], 0.004 * p1[2]);
+      capsule(dark, p1, P(t1, 0), 0.009 * p1[2], 0.003 * p1[2]); capsule(dark, p1, P(t2, 0), 0.009 * p1[2], 0.003 * p1[2]);
+    }
+  }
+  if (Q.tusks) for (const s of [-1, 1]) {
+    const a = P([s * 0.05, sk.snout[1] - 0.02, sk.snout[2] + 0.06], 0), b = P([s * 0.09, sk.snout[1] + 0.07, sk.snout[2] - 0.01], 0);
+    capsule(dark, a, b, 0.016 * a[2], 0.004 * b[2]);
+  }
+  const hr = Q.head * 1.35 * lerp(HB[2], SN[2], 0.5);
+  const geom = { path, head: [lerp(HB[0], SN[0], 0.4), lerp(HB[1], SN[1], 0.4), hr], feetY: maxY, kb: cam.f / e.z * cam.zoom * 0.7,
+                 chest: lerp3(W0, M, 0.4), box: [minX, minY, maxX, maxY], weapon: Q.antlers || Q.tusks ? dark : null };
   return geom;
 }
 
@@ -336,6 +442,37 @@ function buildWeapon(e, sk, hands, P, geom) {
     const a = P(at(0.04), 0), b = P(at(0.27), 0);
     capsule(w, a, b, 0.014 * a[2], 0.003 * b[2]);
     geom.blade = [a, b];
+  } else if (e.weapon === "sword") {
+    let dir = norm3([R.hand[0] - R.elbow[0], R.hand[1] - R.elbow[1], R.hand[2] - R.elbow[2]]);
+    if (e.pose === "raise") dir = norm3([dir[0], Math.abs(dir[1]) + 0.6, dir[2]]);   // blade up for the overhead cut
+    const at = s => add3(R.hand, [dir[0] * s, dir[1] * s, dir[2] * s]);
+    const h0 = P(at(-0.08), 0), a = P(at(0.06), 0), b = P(at(0.88), 0), gl = P(add3(at(0.05), [0.09, 0, 0]), 0), gr = P(add3(at(0.05), [-0.09, 0, 0]), 0);
+    capsule(w, h0, a, 0.016 * h0[2], 0.016 * a[2]);
+    capsule(w, gl, gr, 0.012 * gl[2], 0.012 * gr[2]);             // cross-guard
+    capsule(w, a, b, 0.02 * a[2], 0.004 * b[2]);
+    geom.blade = [a, b];
+  } else if (e.weapon === "spear") {
+    const dir = norm3([Lh.hand[0] - R.hand[0], Lh.hand[1] - R.hand[1], Lh.hand[2] - R.hand[2]]);
+    const at = (p, s) => add3(p, [dir[0] * s, dir[1] * s, dir[2] * s]);
+    const butt = P(at(R.hand, -0.7), 0), tip0 = P(at(Lh.hand, 1.0), 0), tip = P(at(Lh.hand, 1.32), 0);
+    capsule(w, butt, tip0, 0.017 * butt[2], 0.014 * tip0[2]);
+    capsule(w, tip0, tip, 0.035 * tip0[2], 0.002 * tip[2]);
+    geom.muzzle = tip;
+  } else if (e.weapon === "bow") {                            // bow in the left hand, arrow nocked to the right
+    const g = Lh.hand, drawn = e.pose === "bow";
+    const pt = (dy, dd) => P([g[0], g[1] + dy, g[2] + dd], 0);
+    const lim = [[0.72, 0.16], [0.45, 0.02], [0.18, -0.05], [0, -0.06], [-0.18, -0.05], [-0.45, 0.02], [-0.72, 0.16]].map(([y, d]) => pt(y, d));
+    for (let i = 0; i < lim.length - 1; i++) { const r0 = i === 2 || i === 3 ? 0.026 : 0.017; capsule(w, lim[i], lim[i + 1], r0 * lim[i][2], r0 * lim[i + 1][2]); }
+    const nock = drawn ? P(R.hand, 0) : pt(0, 0.16), sw = 0.004;
+    capsule(w, lim[0], nock, sw * lim[0][2], sw * nock[2]); capsule(w, nock, lim[6], sw * nock[2], sw * lim[6][2]);
+    if (drawn) { const tipA = P(add3(g, [0, 0.01, -0.1]), 0); capsule(w, nock, tipA, 0.008 * nock[2], 0.008 * tipA[2]); geom.muzzle = tipA; }
+    else geom.muzzle = pt(0, -0.06);
+  }
+  if (e.shield) {                                             // round shield on the left forearm, faces where he faces
+    const c = add3(Lh.hand, [0, 0.04, -0.06]), r = 0.34, s = new Path2D(), pts = [];
+    for (let i = 0; i < 14; i++) { const a = i / 14 * Math.PI * 2; pts.push(P([c[0] + Math.cos(a) * r, c[1] + Math.sin(a) * r * 1.1, c[2]], 0)); }
+    poly(s, pts); poly(w, pts);
+    geom.shield = s; geom.shieldC = P(c, 0);
   }
   geom.weapon = w;
 }
@@ -443,8 +580,9 @@ function post(t, fx) {
   const { VW, VH } = E, s = (fx.shake || 0) + 0.8;
   const ox = (Math.sin(t * 13.1) + Math.sin(t * 7.3)) * s * 0.5, oy = (Math.cos(t * 11.7) + Math.sin(t * 5.1)) * s * 0.5;
   vctx.fillStyle = "#0b0d10"; vctx.fillRect(0, 0, VW, VH);
-  vctx.drawImage(scene, ox - s, oy - s, VW + 2 * s, VH + 2 * s);
-  vctx.globalCompositeOperation = "overlay"; vctx.globalAlpha = 0.55;
+  if (fx.pixel) pixelate(fx.pixel, ox, oy, s);
+  else vctx.drawImage(scene, ox - s, oy - s, VW + 2 * s, VH + 2 * s);
+  vctx.globalCompositeOperation = "overlay"; vctx.globalAlpha = fx.pixel ? 0.12 : 0.55;
   const tile = grain[(Math.random() * 4) | 0], gx = -Math.random() * 256, gy = -Math.random() * 256;
   for (let y = gy; y < VH; y += 256) for (let x = gx; x < VW; x += 256) vctx.drawImage(tile, x, y);
   vctx.globalCompositeOperation = "screen"; vctx.globalAlpha = 0.07;
@@ -453,6 +591,49 @@ function post(t, fx) {
   vctx.fillStyle = `rgba(0,0,0,${0.05 + Math.random() * 0.06})`; vctx.fillRect(0, 0, VW, VH);
   vctx.fillStyle = vignette; vctx.fillRect(0, 0, VW, VH);
   if (fx.dmg > 0) { vctx.fillStyle = `rgba(160,0,0,${fx.dmg * 0.6})`; vctx.fillRect(0, 0, VW, VH); }
+}
+
+// ---------- optional pixel-art pass (post fx.pixel = {cell, levels, dots, grain}) ----------
+// The scene is shrunk to a coarse grid, stepped to a few levels per channel
+// through a 4x4 ordered (Bayer) dither in a gamma-ish space so the darks keep
+// detail, sensor grain is added per cell, and an optional dark mesh turns each
+// cell into a round dot, like a cross-stitch.
+const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+let pix = null, pixctx = null, pixLut = null, pixLutL = 0, dotPat = null, dotKey = "";
+function pixelate(o, ox, oy, s) {
+  const k = E.VW / innerWidth, cell = Math.max(2, Math.round((o.cell || 4) * k)), pw = Math.ceil(E.VW / cell) + 1, ph = Math.ceil(E.VH / cell) + 1;
+  if (!pix || pix.width !== pw || pix.height !== ph) { pix = mk(pw, ph); pixctx = pix.getContext("2d", { willReadFrequently: true }); pixctx.imageSmoothingQuality = "high"; }
+  const L = o.levels || 7;
+  if (pixLutL !== L) {                         // [value][bayer cell] -> stepped value
+    pixLut = new Uint8Array(256 * 16); pixLutL = L;
+    for (let v = 0; v < 256; v++) for (let b = 0; b < 16; b++) {
+      const q = clamp(Math.floor(Math.sqrt(v / 255) * (L - 1) + (b + 0.5) / 16), 0, L - 1) / (L - 1);
+      pixLut[v * 16 + b] = Math.round(q * q * 255);
+    }
+  }
+  pixctx.drawImage(scene, 0, 0, E.W, E.H, 0, 0, E.VW / cell, E.VH / cell);
+  const img = pixctx.getImageData(0, 0, pw, ph), d = img.data, gr = o.grain ?? 14, sat = o.sat ?? 1.12;
+  for (let y = 0, i = 0; y < ph; y++) for (let x = 0; x < pw; x++, i += 4) {
+    const b = BAYER4[(y & 3) * 4 + (x & 3)], n = (Math.random() - 0.5) * gr;
+    const r = d[i], g = d[i + 1], bl = d[i + 2], m = (r + g + bl) / 3;
+    d[i] = pixLut[clamp(m + (r - m) * sat + n, 0, 255) << 4 | b];
+    d[i + 1] = pixLut[clamp(m + (g - m) * sat + n, 0, 255) << 4 | b];
+    d[i + 2] = pixLut[clamp(m + (bl - m) * sat + n, 0, 255) << 4 | b];
+  }
+  pixctx.putImageData(img, 0, 0);
+  vctx.imageSmoothingEnabled = false;
+  vctx.drawImage(pix, Math.round(ox - s), Math.round(oy - s), pw * cell, ph * cell);
+  vctx.imageSmoothingEnabled = true;
+  if (o.dots) {                                // dark mesh between round dots
+    const key = cell + ":" + o.dots;
+    if (dotKey !== key) {
+      const tl = mk(cell, cell), c = tl.getContext("2d");
+      c.fillStyle = `rgba(0,0,0,${o.dots})`; c.fillRect(0, 0, cell, cell);
+      c.globalCompositeOperation = "destination-out"; c.beginPath(); c.arc(cell / 2, cell / 2, cell * 0.46, 0, 7); c.fill();
+      dotPat = vctx.createPattern(tl, "repeat"); dotKey = key;
+    }
+    vctx.save(); vctx.translate(Math.round(ox - s), Math.round(oy - s)); vctx.fillStyle = dotPat; vctx.fillRect(-cell, -cell, E.VW + 2 * cell, E.VH + 2 * cell); vctx.restore();
+  }
 }
 
 // ---------- HUD helpers ----------
@@ -505,6 +686,15 @@ const sfx = {
   thud:    () => noise(0.12, "lowpass", 300, 0.4, 2),
   ping:    () => noise(0.07, "bandpass", 3600, 0.3, 3),
   enemy:   () => noise(0.3, "lowpass", 900, 0.5, 3),
+  twang:   k => { noise(0.18, "bandpass", 180 + 160 * (k ?? 1), 0.5, 2.5); noise(0.05, "highpass", 2400, 0.15, 2); },   // bow string, pitch with draw
+  creak:   () => noise(0.15, "bandpass", 420, 0.06, 1),
+  thunk:   () => noise(0.09, "lowpass", 520, 0.45, 3),                                     // arrow into wood / earth
+  flesh:   () => noise(0.1, "lowpass", 260, 0.5, 2.5),
+  howl:    () => { try { actx = actx || new AudioContext(); const o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime;
+             o.type = "sawtooth"; o.frequency.setValueAtTime(260, t); o.frequency.linearRampToValueAtTime(520, t + 0.5); o.frequency.linearRampToValueAtTime(380, t + 1.4);
+             g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.05, t + 0.3); g.gain.linearRampToValueAtTime(0.0001, t + 1.5);
+             const f = actx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 900; o.connect(f).connect(g).connect(actx.destination); o.start(t); o.stop(t + 1.6); } catch (_) {} },
+  shout:   () => noise(0.35, "bandpass", 700, 0.35, 1.5),
 };
 
 // ---------- input + loop ----------

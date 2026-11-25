@@ -49,6 +49,7 @@
   #panel .dot.red { background: #ff3a2a; box-shadow: 0 0 10px #ff3a2a; }
   #panel .dot.orange { background: #ff7a20; box-shadow: 0 0 10px #ff7a20; }
   #panel .dot.blue { background: #4aa0ff; box-shadow: 0 0 10px #4aa0ff; }
+  #panel .dot.green { background: #b0ce3a; box-shadow: 0 0 10px #b0ce3a; }
   #panel .note { margin: 0 0 18px; padding: 10px 12px; border-left: 2px solid #ffad7a; background: rgba(255,173,122,0.06); color: #e6d6c8; }
   #panel dl { margin: 0 0 22px; display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; align-items: center; }
   #panel .keys dt { font: 500 12px/1 "JetBrains Mono", ui-monospace, monospace; padding: 6px 8px; border: 1px solid rgba(200,215,235,0.22); border-bottom-width: 2px; border-radius: 4px; color: #e8eef6; text-align: center; }
@@ -74,6 +75,7 @@
     <button class="l1" id="go-chase">LEVEL 2 · THE GETAWAY<small>Car chase. Five armed men, breakable glass.</small></button>
     <button class="l1" id="go-metro">LEVEL 3 · METRO SIEGE<small>Close quarters. Hostage shields, failing lights.</small></button>
     <button class="l1" id="go-street">LEVEL 4 · STREET RUN<small>On foot. Shops, cinema, mall. Stones and knives.</small></button>
+    <button class="l1" id="go-archery">THE ARCHER<small>Bow only. Woods, fort, palace, the scroll.</small></button>
     <button id="go-road">PROTOTYPE · THE ROAD<small>They walk out of the fog and grab you.</small></button>
   </div>
 </div>
@@ -84,9 +86,11 @@
 <script src="chase.js"></script>
 <script src="metro.js"></script>
 <script src="street.js"></script>
+<script src="wildkit.js"></script>
+<script src="archery.js"></script>
 <script>
   const menu = document.getElementById("menu"), canvas = document.getElementById("c");
-  const LEVELS = { bank: BankLevel, chase: ChaseLevel, metro: MetroLevel, street: StreetLevel, road: RoadLevel };
+  const LEVELS = { bank: BankLevel, chase: ChaseLevel, metro: MetroLevel, street: StreetLevel, road: RoadLevel, archery: ArcheryLevel };
   function play(name) {
     menu.hidden = true;
     try { history.replaceState(null, "", "#" + name); } catch (_) {}
@@ -97,6 +101,7 @@
   document.getElementById("go-chase").onclick = () => play("chase");
   document.getElementById("go-metro").onclick = () => play("metro");
   document.getElementById("go-street").onclick = () => play("street");
+  document.getElementById("go-archery").onclick = () => play("archery");
   addEventListener("keydown", ev => { if (ev.code === "Escape") menu.hidden = false; });
   startEngine(canvas, BankLevel);            // bank briefing runs behind the menu
   const h = location.hash.slice(1); if (LEVELS[h]) play(h);
