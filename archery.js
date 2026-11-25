@@ -13,7 +13,7 @@
 // =====================================================================
 const ArcheryLevel = (() => {
   const K = WildKit, S = K.S;
-  const GRAV = 7, VMIN = 13, VMAX = 66, DRAW_T = 1.0, SHAKE_T = 1.3, NOCK = 0.45, MAXQ = 24;
+  const GRAV = 7, VMIN = 13, VMAX = 66, FIRE_POWER = 0.9, NOCK = 0.4, MAXQ = 24;   // one click looses at FIRE_POWER, NOCK s between shots
   const WALK = 2.8, EYE = 1.62, CROUCH = 1.2, TELE = 1.0, END_D = 546;
   const PIXEL = { cell: 4, levels: 9, dots: 0.26, grain: 12, sat: 1.45, contrast: 1.3, lift: 6 };
 
@@ -86,7 +86,7 @@ const ArcheryLevel = (() => {
 
   // ---------------------------------------------------------------- setup
   function init(act = 0) {
-    G = { phase: "brief", act, hp: 100, food: 100, quiver: ACTS[act].quiver, draw: 0, drawing: false, hold: 0, nock: 0, zk: 0, zoomHeld: false,
+    G = { phase: "brief", act, hp: 100, food: 100, quiver: ACTS[act].quiver, nock: 0, zk: 0, zoomHeld: false,
       shake: 0, dmg: 0, msg: "", msgT: 0, big: "", bigT: 0, time: 0, shots: 0, hits: 0, kills: 0, food0: 0, endT: 0, reason: "",
       stop: -1, speed: 0, clearT: 0, fighting: false, alert: false, alarm: act === 4, scroll: act === 4, skip: false, bob: 0, helpT: 9,
       sparks: [], dust: [], bodies: [], camH: EYE, release: 0, crackT: 0, reinf: false, losT: 0, ate: new Set(), actShown: act - 1 };
@@ -251,11 +251,6 @@ const ArcheryLevel = (() => {
     cam.offX = K.pathX(S.D) + Math.sin(G.bob) * 0.05 * (G.speed / WALK);
     pickups(step);
 
-    // bow: draw, hold, shake
-    if (G.drawing && play) {
-      if (G.draw < 1) { G.draw = Math.min(1, G.draw + dt / DRAW_T); if (Math.random() < dt * 6) sfx.creak(); }
-      else G.hold += dt;
-    }
     G.zk = ease(G.zk, G.zoomHeld && play ? 1 : 0, 9, dt);
     cam.zoom = 1 + 0.6 * G.zk;
     const [ax, ay] = aimPoint(t), hw = W / (2 * cam.zoom), hh = H / (2 * cam.zoom);
@@ -280,9 +275,9 @@ const ArcheryLevel = (() => {
     stuck = stuck.filter(a => a.fig ? !a.fig.gone : a.p[2] - S.D > -3);
   }
 
-  // aim point in view px: the mouse, plus a shake that grows once full draw is held too long
+  // aim point in view px: the mouse plus a small steady wobble (bigger when zoomed in)
   function aimPoint(t) {
-    const amp = (G.drawing ? 0.6 + Math.max(0, G.hold - SHAKE_T) * 9 : 0.4) * (1 + G.zk * 0.5) * (H / 500);
+    const amp = 0.4 * (1 + G.zk * 0.5) * (H / 500);
     return [E.mouse.x * SCALE + (Math.sin(t * 2.1) + Math.sin(t * 5.3) * 0.5) * amp * 2, E.mouse.y * SCALE + (Math.cos(t * 1.7) + Math.sin(t * 6.1) * 0.5) * amp * 1.6];
   }
 
@@ -388,7 +383,7 @@ const ArcheryLevel = (() => {
     let ang = Math.abs(Math.atan2(Math.sin(yawTo - e.yaw), Math.cos(yawTo - e.yaw)));
     if (ang < 1.0 && e.los && dist < 55) {
       let rate = 0.55 * (1 - dist / 62) * (dist < 7 ? 3 : 1);
-      if (G.hidden) rate *= 0.1; else if (G.drawing) rate *= 1.3;
+      if (G.hidden) rate *= 0.1;
       e.sus += rate * dt;
     } else e.sus = Math.max(0, e.sus - dt * 0.04);
     // bodies on the ground
@@ -439,8 +434,8 @@ const ArcheryLevel = (() => {
 
   // ---------------------------------------------------------------- your arrows
   function loosePlayer(t) {
-    const k = G.draw; G.drawing = false; G.draw = 0; G.hold = 0;
-    if (k < 0.08 || G.quiver <= 0 || G.phase !== "play") return;
+    const k = FIRE_POWER;
+    if (G.quiver <= 0 || G.phase !== "play") return;
     G.quiver--; G.shots++; G.nock = NOCK; G.release = 0.18; sfx.twang(k);
     const [ax, ay] = aimPoint(t), [sx, sy] = toStage(ax, ay);
     const d = norm3([(sx - cam.cx) / cam.f, (cam.hor - sy) / cam.f, 1]), v = lerp(VMIN, VMAX, Math.pow(k, 1.3));
@@ -572,7 +567,7 @@ const ArcheryLevel = (() => {
     for (let i = 0; i < 7; i++) G.dust.push({ x, y, vx: (Math.random() - 0.5) * k * 0.6, vy: -Math.random() * k * 0.4, g: k * 1.2, age: 0, life: 0.4 + Math.random() * 0.3, r: Math.max(0.6, k * 0.012) });
   }
   function say(m, d = 2) { G.msg = m; G.msgT = d; }
-  function end(phase, reason) { if (G.phase !== "play") return; G.phase = phase; G.reason = reason; G.endT = 0; G.drawing = false; setTimeout(showEnd, 1300); }
+  function end(phase, reason) { if (G.phase !== "play") return; G.phase = phase; G.reason = reason; G.endT = 0; setTimeout(showEnd, 1300); }
 
   // ---------------------------------------------------------------- input
   function onDown(b) {
@@ -585,12 +580,9 @@ const ArcheryLevel = (() => {
     }
     if (G.quiver <= 0) { sfx.empty(); say("QUIVER EMPTY", 1.2); return; }
     if (G.nock > 0) return;
-    G.drawing = true; G.draw = 0; G.hold = 0;
+    loosePlayer(performance.now() / 1000);       // one click, one arrow
   }
-  function onUp(b) {
-    if (b === 2) { G.zoomHeld = false; return; }
-    if (b === 0 && G.drawing) loosePlayer(performance.now() / 1000);
-  }
+  function onUp(b) { if (b === 2) G.zoomHeld = false; }
   function onKey(code) {
     if (code === "Space" && G.phase === "play" && G.fighting) {
       const st = STOPS[G.stop];
@@ -697,11 +689,11 @@ const ArcheryLevel = (() => {
     if (G.crackT > 0) G.crackT -= 1 / 60;
   }
 
-  // your bow, left of centre: limbs bend and the string comes back as you draw
+  // your bow, left of centre: the limbs bend and the string snaps back on each shot
   function bow(t) {
     if (G.phase === "brief") return;
-    const g = sctx, k = H / 500, d = G.drawing ? easeOut(G.draw) : 0, rel = G.release / 0.18;
-    const sway = G.speed > 0.3 ? Math.sin(G.bob * 2) * 4 * k : 0, shake = G.drawing && G.hold > SHAKE_T ? Math.sin(t * 40) * Math.min(3, G.hold - SHAKE_T) * k : 0;
+    const g = sctx, k = H / 500, rel = G.release / 0.18, d = rel;     // the string snaps back on each shot
+    const sway = G.speed > 0.3 ? Math.sin(G.bob * 2) * 4 * k : 0, shake = 0;
     const gx = W * 0.3 + shake + rel * 6 * k, gy = H * 0.66 + sway - d * 10 * k, L = 250 * k, bend = 26 * k + d * 32 * k;
     const tipT = [gx + bend * 0.9, gy - L], tipB = [gx + bend * 0.9, gy + L * 0.95];
     g.save();
@@ -769,16 +761,11 @@ const ArcheryLevel = (() => {
   function hud(t) {
     const k = hudK(), pad = 22 * k, VW = E.VW, VH = E.VH, play = G.phase === "play";
     const [ax, ay] = aimPoint(t), cxv = ax / SCALE * k, cyv = ay / SCALE * k;
-    if (play) {                                    // crosshair: four ticks and a dot; draw strength as a ring of 12 pips
-      const shaking = G.drawing && G.hold > SHAKE_T, c = shaking ? "#ff6a50" : G.drawing && G.draw >= 1 ? GOLD : INK, r = 9 * k, L = 6 * k;
+    if (play) {                                    // crosshair: four ticks and a dot
+      const c = INK, r = 9 * k, L = 6 * k;
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { vctx.fillStyle = "#000"; vctx.fillRect(cxv + dx * r - 2 * k + (dy ? 0 : dx * L / 2), cyv + dy * r - 2 * k + (dx ? 0 : dy * L / 2), dy ? 4 * k : L + 2 * k, dx ? 4 * k : L + 2 * k); }
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { vctx.fillStyle = c; vctx.fillRect(cxv + dx * r - k + (dy ? 0 : dx * L / 2), cyv + dy * r - k + (dx ? 0 : dy * L / 2), dy ? 2 * k : L, dx ? 2 * k : L); }
       vctx.fillStyle = "#000"; vctx.fillRect(cxv - 2 * k, cyv - 2 * k, 4 * k, 4 * k); vctx.fillStyle = c; vctx.fillRect(cxv - k, cyv - k, 2 * k, 2 * k);
-      if (G.drawing) for (let i = 0; i < 12; i++) {
-        const a = -Math.PI / 2 + i / 12 * Math.PI * 2, on = G.draw * 12 > i, px = cxv + Math.cos(a) * 24 * k, py = cyv + Math.sin(a) * 24 * k;
-        vctx.fillStyle = "#000"; vctx.fillRect(px - 3 * k, py - 3 * k, 6 * k, 6 * k);
-        vctx.fillStyle = on ? c : "rgba(255,255,255,0.18)"; vctx.fillRect(px - 2 * k, py - 2 * k, 4 * k, 4 * k);
-      }
     }
     // top left: act badge, act name, stop
     const st = STOPS[G.stop], act = ACTS[G.act];
@@ -848,7 +835,7 @@ const ArcheryLevel = (() => {
     if (play && stp && stp.scroll && SCROLL.here && foesLeft() === 0) hint("CLICK THE SCROLL TO TAKE IT", GOLD);
     if (play && G.quiver === 0 && arrows.length === 0) txt("QUIVER EMPTY — PICK ARROWS UP AS YOU WALK", VW / 2, VH * 0.33, 13 * k, "#ff9a70", "center");
     if (play && G.helpT > 0) {                    // key caps
-      const a = Math.min(1, G.helpT), keys = [["LMB", "hold to draw"], ["RMB", "zoom"], ["ESC", "menu"]];
+      const a = Math.min(1, G.helpT), keys = [["LMB", "fire"], ["RMB", "zoom"], ["ESC", "menu"]];
       vctx.font = `700 ${Math.round(12 * k)}px ${FONT}`;
       const ws = keys.map(([c, l]) => vctx.measureText(c).width + vctx.measureText(l).width + 34 * k), tot = ws.reduce((s, w) => s + w, 0) + 16 * k * (keys.length - 1);
       let x = VW / 2 - tot / 2; const y = VH - pad - 16 * k;
@@ -858,7 +845,7 @@ const ArcheryLevel = (() => {
     }
   }
 
-  const KEYS = [["Hold left", "Draw (about 1 s), release to loose"], ["Right hold", "Zoom for long shots"], ["Space", "Move on from a hunt · Esc menu"]];
+  const KEYS = [["Left click", "Fire. Aim with the crosshair"], ["Right hold", "Zoom for long shots"], ["Space", "Move on from a hunt · Esc menu"]];
   function showBrief() {
     const a = G.act;
     showPanel(`
@@ -877,7 +864,7 @@ const ArcheryLevel = (() => {
         <li><i class="dot red"></i><span><b>Archers</b> shoot back once alerted, after a red glint.</span></li>
         <li><i class="dot blue"></i><span><b>Townsfolk</b>. Hitting one ends the run.</span></li>
       </ul>
-      <p class="note">Arrows drop: a weak draw falls short, a full draw flies flat. Lead moving targets. Behind a bush or cart you are hidden. Head shots are silent; misses and body shots make noise.</p>
+      <p class="note">Arrows drop over distance: aim a little high on far targets, and lead moving ones. Behind a bush or cart you are hidden. Head shots are silent; misses and body shots make noise.</p>
       <dl class="keys">${KEYS.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
       <div class="actions"><button id="p-go" class="primary">${a ? "Start act " + (a + 1) : "Start walking"}</button>${a ? "" : '<button id="p-acts">Choose act</button>'}</div>`,
       { "p-go": () => { hidePanel(); G.phase = "play"; G.actShown = G.act - 1; }, "p-acts": () => showActs() });
