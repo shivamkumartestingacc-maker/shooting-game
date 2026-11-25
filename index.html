@@ -73,17 +73,20 @@
     <button class="l1" id="go-bank">LEVEL 1 · CITY TRUST BANK<small>Sniper. Seven hostages, six gunmen.</small></button>
     <button class="l1" id="go-chase">LEVEL 2 · THE GETAWAY<small>Car chase. Five armed men, breakable glass.</small></button>
     <button class="l1" id="go-metro">LEVEL 3 · METRO SIEGE<small>Close quarters. Hostage shields, failing lights.</small></button>
+    <button class="l1" id="go-street">LEVEL 4 · STREET RUN<small>On foot. Shops, cinema, mall. Stones and knives.</small></button>
     <button id="go-road">PROTOTYPE · THE ROAD<small>They walk out of the fog and grab you.</small></button>
   </div>
 </div>
 <script src="engine.js"></script>
 <script src="road.js"></script>
 <script src="bank.js"></script>
+<script src="city.js"></script>
 <script src="chase.js"></script>
 <script src="metro.js"></script>
+<script src="street.js"></script>
 <script>
   const menu = document.getElementById("menu"), canvas = document.getElementById("c");
-  const LEVELS = { bank: BankLevel, chase: ChaseLevel, metro: MetroLevel, road: RoadLevel };
+  const LEVELS = { bank: BankLevel, chase: ChaseLevel, metro: MetroLevel, street: StreetLevel, road: RoadLevel };
   function play(name) {
     menu.hidden = true;
     try { history.replaceState(null, "", "#" + name); } catch (_) {}
@@ -93,6 +96,7 @@
   document.getElementById("go-road").onclick = () => play("road");
   document.getElementById("go-chase").onclick = () => play("chase");
   document.getElementById("go-metro").onclick = () => play("metro");
+  document.getElementById("go-street").onclick = () => play("street");
   addEventListener("keydown", ev => { if (ev.code === "Escape") menu.hidden = false; });
   startEngine(canvas, BankLevel);            // bank briefing runs behind the menu
   const h = location.hash.slice(1); if (LEVELS[h]) play(h);
