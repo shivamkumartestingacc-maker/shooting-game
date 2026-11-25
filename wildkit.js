@@ -15,9 +15,9 @@ const WildKit = (() => {
 
   // ------------------------------------------------------------------ palettes
   const PAL = {
-    dusk:  { top: [22, 28, 62], mid: [92, 58, 98], hor: [226, 122, 78], fog: [86, 70, 92], sun: 1, moon: 0, stars: 0.15, cloud: 0, light: [255, 170, 110] },
-    twi:   { top: [14, 20, 48], mid: [52, 44, 84], hor: [150, 86, 84], fog: [52, 50, 74], sun: 0.4, moon: 0.5, stars: 0.5, cloud: 0.5, light: [200, 150, 140] },
-    night: { top: [6, 9, 22], mid: [16, 24, 48], hor: [40, 52, 82], fog: [24, 30, 48], sun: 0, moon: 1, stars: 1, cloud: 1, light: [150, 170, 220] },
+    dusk:  { top: [34, 58, 150], mid: [168, 92, 150], hor: [255, 156, 74], fog: [150, 110, 130], sun: 1, moon: 0, stars: 0.15, cloud: 0, light: [255, 170, 110] },
+    twi:   { top: [20, 32, 92], mid: [96, 64, 132], hor: [230, 112, 82], fog: [92, 80, 118], sun: 0.4, moon: 0.5, stars: 0.5, cloud: 0.5, light: [200, 150, 140] },
+    night: { top: [8, 14, 46], mid: [26, 44, 104], hor: [70, 96, 168], fog: [42, 56, 102], sun: 0, moon: 1, stars: 1, cloud: 1, light: [150, 170, 220] },
   };
   const mixPal = (a, b, k) => { const o = {}; for (const key in a) o[key] = Array.isArray(a[key]) ? lerp3(a[key], b[key], k) : lerp(a[key], b[key], k); return o; };
   function palAt(D) {
@@ -27,12 +27,12 @@ const WildKit = (() => {
     return PAL.night;
   }
   // ground / walls tone per zone: [near colour, fog strength]
-  const ZONE_GROUND = { forest: [22, 34, 22], meadow: [36, 50, 30], town: [40, 42, 48], court: [50, 50, 56], hall: [42, 32, 26] };
+  const ZONE_GROUND = { forest: [38, 96, 36], meadow: [86, 140, 46], town: [84, 78, 80], court: [104, 100, 110], hall: [86, 58, 40] };
   const zoneAt = wz => { for (const z of S.zones) if (wz >= z[0] && wz < z[1]) return z[2]; return "forest"; };
   const indoor = wz => zoneAt(wz) === "hall";
 
   // fog: far things sink into the zone fog colour; indoors the fog is warm darkness
-  function fogK(z) { return 1 - Math.exp(-Math.max(0, z) / (indoor(S.D + 1) ? 34 : 80)); }
+  function fogK(z) { return 1 - Math.exp(-Math.max(0, z) / (indoor(S.D + 1) ? 40 : 110)); }
   function tone(rgb, z, add = 0) {
     const f = fogK(z), fc = indoor(S.D + 1) ? [14, 10, 8] : S.pal.fog;
     return `rgb(${Math.round(lerp(rgb[0] + add, fc[0], f))},${Math.round(lerp(rgb[1] + add, fc[1], f))},${Math.round(lerp(rgb[2] + add, fc[2], f))})`;
@@ -127,7 +127,7 @@ const WildKit = (() => {
       }
       if (type === "court") {
         for (const side of [-1, 1]) {
-          add({ type: "box", back: true, wz: a, x0: side > 0 ? 9 : -10, x1: side > 0 ? 10 : -9, y0: 0, y1: 7, z0: a, z1: b, rgb: [58, 58, 66], occ: [] });
+          add({ type: "box", back: true, wz: a, x0: side > 0 ? 9 : -10, x1: side > 0 ? 10 : -9, y0: 0, y1: 7, z0: a, z1: b, rgb: [110, 108, 122], occ: [] });
           for (let wz = a + 2; wz < b - 1; wz += 4.5) pillar(add, side * 7, wz, 6.5, 0.38);
           add({ type: "roofline", back: true, side, x: side * 7, y: 6.5, wz: a, wz0: a, wz1: b });
         }
@@ -140,7 +140,7 @@ const WildKit = (() => {
           for (const side of [-1, 1]) add({ type: "hallwall", back: true, side, x: side * w, h, wz, len: 1, occ: [{ k: "box", x0: side > 0 ? w : -w - 1, x1: side > 0 ? w + 1 : -w, y0: 0, y1: h, z0: wz, z1: wz + 1 }] });
           add({ type: "ceiling", back: true, w, h, wz, len: 1 });
         }
-        for (let wz = a + 3; wz < 422; wz += 5) { pillar(add, -4, wz, 9, 0.42, [70, 56, 46]); pillar(add, 4, wz, 9, 0.42, [70, 56, 46]); }
+        for (let wz = a + 3; wz < 422; wz += 5) { pillar(add, -4, wz, 9, 0.42, [140, 106, 78]); pillar(add, 4, wz, 9, 0.42, [140, 106, 78]); }
         for (let wz = a + 5.5; wz < 422; wz += 10) for (const side of [-1, 1]) add({ type: "banner", x: side * 5.95, wz, side });
         for (let wz = a + 3; wz < 422; wz += 10) add({ type: "torch", x: -3.5, y: 2.9, wz, seed: wz | 0 }), add({ type: "torch", x: 3.5, y: 2.9, wz: wz + 5, seed: wz | 1 });
         for (let wz = 426; wz < b; wz += 7) add({ type: "torch", x: (wz % 2 ? 1 : -1) * 2.7, y: 2.4, wz, seed: wz | 0 });
@@ -176,12 +176,13 @@ const WildKit = (() => {
     const X = side * 5, h = 4.5 + r() * 4.5, deep = 7, timber = r() < 0.6;
     const wins = [];
     for (let fy = 1.4; fy < h - 0.8; fy += 2.2) for (let fz = 0.9; fz < len - 0.8; fz += 1.8 + r() * 0.6) if (r() < 0.55) wins.push({ y: fy, z: fz, lit: r() < 0.32, w: 0.6 + r() * 0.3 });
-    add({ type: "house", back: true, side, X, wz, len, h, deep, timber, roof: 1.6 + r() * 1.8, rgb: timber ? [70, 62, 54] : [62, 64, 72], wins, door: r() < 0.6 ? 0.6 + r() * (len - 2) : -1,
+    const ROOFS = [[214, 96, 40], [196, 62, 44], [232, 170, 60], [170, 70, 52], [70, 110, 170]];
+    add({ type: "house", back: true, side, X, wz, len, h, deep, timber, roof: 1.6 + r() * 1.8, rgb: timber ? [150, 128, 100] : [100, 100, 118], rf: ROOFS[(r() * ROOFS.length) | 0], wins, door: r() < 0.6 ? 0.6 + r() * (len - 2) : -1,
       occ: [{ k: "box", x0: side > 0 ? X : X - deep, x1: side > 0 ? X + deep : X, y0: 0, y1: h, z0: wz, z1: wz + len }] });
   }
   function barrel(add, x, wz) { add({ type: "barrel", ext: 0.4, x, wz, occ: [{ k: "cyl", x, z: wz, r: 0.36, y0: 0, y1: 0.95 }] }); }
   function crate(add, x, wz, r) { const s = 0.5 + r() * 0.3; add({ type: "box", wz: wz - s, x0: x - s, x1: x + s, y0: 0, y1: s * 1.6, z0: wz - s, z1: wz + s, rgb: [64, 50, 36], plank: true, occ: [{ k: "box", x0: x - s, x1: x + s, y0: 0, y1: s * 1.6, z0: wz - s, z1: wz + s }] }); }
-  function pillar(add, x, wz, h, rad, rgb = [74, 74, 82]) { add({ type: "pillar", ext: rad * 1.4, x, wz, h, rad, rgb, occ: [{ k: "cyl", x, z: wz, r: rad, y0: 0, y1: h }] }); }
+  function pillar(add, x, wz, h, rad, rgb = [130, 128, 140]) { add({ type: "pillar", ext: rad * 1.4, x, wz, h, rad, rgb, occ: [{ k: "cyl", x, z: wz, r: rad, y0: 0, y1: h }] }); }
 
   function special(add, s, r) {
     if (s.type === "wall") return add(wallItem(s));
@@ -200,6 +201,7 @@ const WildKit = (() => {
   // a wall across the path: thick, crenellated, a gate opening, towers
   function wallItem(s) {
     const o = Object.assign({ h: 9, thick: 2.5, gate: [4.4, 5.5], towers: [], span: 70, rgb: [70, 68, 74] }, s);
+    o.rgb = o.rgb.map(v => Math.min(255, v * 1.5));
     const [gw, gh] = o.gate, z0 = o.wz, z1 = o.wz + o.thick;
     o.occ = [{ k: "box", x0: -o.span, x1: -gw / 2, y0: 0, y1: o.h, z0, z1 }, { k: "box", x0: gw / 2, x1: o.span, y0: 0, y1: o.h, z0, z1 }, { k: "box", x0: -gw / 2, x1: gw / 2, y0: gh, y1: o.h, z0, z1 }];
     for (const tx of o.towers) o.occ.push({ k: "box", x0: tx - 2, x1: tx + 2, y0: 0, y1: o.h + 4, z0: z0 - 1.5, z1: z1 + 1 });
@@ -291,13 +293,13 @@ const WildKit = (() => {
         g.beginPath();
         const L = pts.map(wz => pk(pathX(wz) - 0.75 - (wz - D) * 0.004, 0.003, wz)), R = pts.map(wz => pk(pathX(wz) + 0.75 + (wz - D) * 0.004, 0.003, wz));
         g.moveTo(L[0][0], L[0][1]); for (const p of L) g.lineTo(p[0], p[1]); for (const p of R.reverse()) g.lineTo(p[0], p[1]); g.closePath();
-        const tg = g.createLinearGradient(0, yF, 0, yN); for (const zz of [z1 - D, 64, 32, 16, 8, 4, z0 - D]) if (zz <= z1 - D && zz >= z0 - D) tg.addColorStop(clamp((pk(0, 0, zz + D)[1] - yF) / ((yN - yF) || 1), 0, 1), tone([66, 52, 40], zz));
+        const tg = g.createLinearGradient(0, yF, 0, yN); for (const zz of [z1 - D, 64, 32, 16, 8, 4, z0 - D]) if (zz <= z1 - D && zz >= z0 - D) tg.addColorStop(clamp((pk(0, 0, zz + D)[1] - yF) / ((yN - yF) || 1), 0, 1), tone([150, 112, 70], zz));
         g.fillStyle = tg; g.fill();
       } else {                                           // cobbles / flags: joint lines near us
         const step = type === "hall" ? 1.2 : type === "court" ? 1.5 : 0.6, lim = Math.min(z1, D + 30);
         for (let wz = Math.ceil(z0 / step) * step; wz < lim; wz += step) seg([-12, 0, wz], [12, 0, wz], `rgba(10,10,14,${0.35 * (1 - fogK(wz - D))})`, 0.7);
         if (type !== "town") for (let x = -9; x <= 9; x += step * 1.5) seg([x, 0, z0], [x, 0, lim], `rgba(10,10,14,${0.25})`, 0.6);
-        if (type === "hall") face([[-1.1, 0.004, z0], [1.1, 0.004, z0], [1.1, 0.004, Math.min(z1, 423)], [-1.1, 0.004, Math.min(z1, 423)]], tone([92, 22, 26], 6));
+        if (type === "hall") face([[-1.1, 0.004, z0], [1.1, 0.004, z0], [1.1, 0.004, Math.min(z1, 423)], [-1.1, 0.004, Math.min(z1, 423)]], tone([170, 30, 40], 6));
       }
     }
   }
@@ -325,18 +327,18 @@ const WildKit = (() => {
       case "tree": {
         if (z < 0.3) return;
         const [bx, by, kk] = pk(it.x, 0, it.wz), [tx, ty] = pk(it.x + it.lean, it.h * 0.72, it.wz), r = it.rad * kk;
-        const bark = tone([38, 34, 30], z);
+        const bark = tone([64, 44, 30], z);
         g.fillStyle = bark; g.beginPath(); g.moveTo(bx - r, by); g.lineTo(tx - r * 0.5, ty); g.lineTo(tx + r * 0.5, ty); g.lineTo(bx + r, by); g.closePath(); g.fill();
-        g.fillStyle = tone([96, 72, 50], z); g.fillRect(bx - r, ty, Math.max(1, r * 0.35), by - ty);     // sunlit edge of the bark
+        g.fillStyle = tone([170, 120, 70], z); g.fillRect(bx - r, ty, Math.max(1, r * 0.35), by - ty);     // sunlit edge of the bark
         g.strokeStyle = bark; g.lineCap = "round";
         for (const b of it.br) { const [ax, ay] = pk(it.x + it.lean * b.y / it.h, b.y, it.wz), [cx, cy] = pk(it.x + b.dx, b.y + b.dy, it.wz); g.lineWidth = Math.max(0.8, r * 0.5); g.beginPath(); g.moveTo(ax, ay); g.lineTo(cx, cy); g.stroke(); }
-        const night = S.pal.cloud, base = lerp3([30, 52, 30], [20, 34, 40], night), lit = lerp3([150, 132, 60], [70, 100, 120], night);
+        const night = S.pal.cloud, base = lerp3([40, 110, 40], [30, 80, 70], night), lit = lerp3([200, 220, 80], [120, 190, 200], night);
         for (const b of it.blobs) {
           const [cx, cy, kb] = pk(it.x + b.dx, b.dy, it.wz + b.dz), rr = b.r * kb;
           if (rr < 0.6) continue;
-          g.fillStyle = tone(lerp3(base, [12, 20, 16], 0.5), z); g.beginPath(); g.arc(cx + rr * 0.12, cy + rr * 0.18, rr, 0, 7); g.fill();
-          g.fillStyle = tone(lerp3(base, [40, 64, 26], it.hue * 0.6), z); g.beginPath(); g.arc(cx, cy, rr * 0.88, 0, 7); g.fill();
-          g.fillStyle = tone(lit, z); g.globalAlpha = 0.55 * k; g.beginPath(); g.arc(cx - rr * 0.35, cy - rr * 0.38, rr * 0.45, 0, 7); g.fill(); g.globalAlpha = 1;
+          g.fillStyle = tone(lerp3(base, [8, 24, 14], 0.6), z); g.beginPath(); g.arc(cx + rr * 0.12, cy + rr * 0.18, rr, 0, 7); g.fill();
+          g.fillStyle = tone(lerp3(base, [80, 140, 30], it.hue * 0.5), z); g.beginPath(); g.arc(cx, cy, rr * 0.88, 0, 7); g.fill();
+          g.fillStyle = tone(lit, z); g.globalAlpha = 0.8 * k; g.beginPath(); g.arc(cx - rr * 0.35, cy - rr * 0.38, rr * 0.45, 0, 7); g.fill(); g.globalAlpha = 1;
         }
         return;
       }
@@ -347,21 +349,21 @@ const WildKit = (() => {
         const night = S.pal.cloud;
         for (let i = 0; i < it.tiers; i++) {
           const u = i / it.tiers, y0 = ty + (by - ty) * (0.12 + u * 0.68), y1 = y0 + (by - ty) * 0.3, ww = w * (0.35 + u * 0.75);
-          g.fillStyle = tone(lerp3([24, 44, 34], [18, 30, 38], night), z); g.beginPath(); g.moveTo(bx, y0 - (by - ty) * 0.06); g.lineTo(bx + ww, y1); g.lineTo(bx - ww, y1); g.closePath(); g.fill();
-          g.fillStyle = tone(lerp3([110, 110, 60], [60, 90, 110], night), z); g.globalAlpha = 0.4 * k;
+          g.fillStyle = tone(lerp3([24, 80, 50], [20, 60, 70], night), z); g.beginPath(); g.moveTo(bx, y0 - (by - ty) * 0.06); g.lineTo(bx + ww, y1); g.lineTo(bx - ww, y1); g.closePath(); g.fill();
+          g.fillStyle = tone(lerp3([150, 190, 80], [90, 160, 180], night), z); g.globalAlpha = 0.6 * k;
           g.beginPath(); g.moveTo(bx, y0 - (by - ty) * 0.06); g.lineTo(bx - ww * 0.15, y1 - (y1 - y0) * 0.3); g.lineTo(bx - ww, y1); g.closePath(); g.fill(); g.globalAlpha = 1;
         }
         return;
       }
       case "bush": {
         if (z < 0.2) return;
-        const night = S.pal.cloud, base = lerp3([28, 46, 26], [18, 30, 34], night);
+        const night = S.pal.cloud, base = lerp3([40, 104, 36], [30, 76, 66], night);
         for (const b of it.blobs) {
           const p = V([it.x + b.dx, b.dy, it.wz + b.dz]); if (p[2] < NEAR) continue;
           const [cx, cy, kb] = project(...p), rr = b.r * kb;
           g.fillStyle = tone([12, 18, 14], z); g.beginPath(); g.arc(cx, cy + rr * 0.15, rr, 0, 7); g.fill();
-          g.fillStyle = tone(lerp3(base, [44, 62, 24], it.hue * 0.5), z); g.beginPath(); g.arc(cx, cy, rr * 0.86, 0, 7); g.fill();
-          g.globalAlpha = 0.45 * k; g.fillStyle = tone(lerp3([120, 120, 56], [60, 90, 110], night), z); g.beginPath(); g.arc(cx - rr * 0.3, cy - rr * 0.35, rr * 0.4, 0, 7); g.fill(); g.globalAlpha = 1;
+          g.fillStyle = tone(lerp3(base, [90, 140, 30], it.hue * 0.5), z); g.beginPath(); g.arc(cx, cy, rr * 0.86, 0, 7); g.fill();
+          g.globalAlpha = 0.7 * k; g.fillStyle = tone(lerp3([190, 210, 80], [120, 180, 190], night), z); g.beginPath(); g.arc(cx - rr * 0.3, cy - rr * 0.35, rr * 0.4, 0, 7); g.fill(); g.globalAlpha = 1;
           if (it.hide && z < 4) {                          // leaves at the edge of your hide
             const rs = mulberry(it.wz * 100 | 0); g.fillStyle = tone([16, 26, 18], z);
             for (let i = 0; i < 26; i++) { const a = rs() * 6.283, d = rr * (0.7 + rs() * 0.35); g.beginPath(); g.ellipse(cx + Math.cos(a) * d, cy + Math.sin(a) * d, rr * 0.14, rr * 0.06, a, 0, 7); g.fill(); }
@@ -372,7 +374,7 @@ const WildKit = (() => {
       case "grass": {
         if (z < 0.6 || z > 45) return;
         const [x, y, kk] = pk(it.x, 0, it.wz), h = it.h * kk, rs = mulberry(it.seed);
-        g.strokeStyle = tone(lerp3([46, 64, 32], [30, 44, 46], S.pal.cloud), z); g.lineWidth = Math.max(0.6, kk * 0.02);
+        g.strokeStyle = tone(lerp3([110, 160, 50], [60, 120, 110], S.pal.cloud), z); g.lineWidth = Math.max(0.6, kk * 0.02);
         g.beginPath(); for (let i = 0; i < 5; i++) { const dx = (rs() - 0.5) * h * 0.6; g.moveTo(x + dx, y); g.quadraticCurveTo(x + dx, y - h * 0.6, x + dx + (rs() - 0.5) * h * 0.8, y - h * (0.6 + rs() * 0.4)); } g.stroke();
         return;
       }
@@ -404,14 +406,14 @@ const WildKit = (() => {
       case "roofline": { const X = it.x; face([[X, it.y, it.wz0], [X, it.y, it.wz1], [X + it.side * 3, it.y + 1.4, it.wz1], [X + it.side * 3, it.y + 1.4, it.wz0]], tone([40, 34, 36], 10)); face([[X, it.y - 0.6, it.wz0], [X, it.y - 0.6, it.wz1], [X, it.y, it.wz1], [X, it.y, it.wz0]], tone([66, 66, 74], 10)); return; }
       case "hallwall": {
         const X = it.x, gx = it.side > 0 ? X : X;
-        face([[gx, 0, it.wz], [gx, 0, it.wz + it.len + 0.02], [gx, it.h, it.wz + it.len + 0.02], [gx, it.h, it.wz]], tone([66, 50, 40], z, it.wz % 2 ? 0 : -4));
+        face([[gx, 0, it.wz], [gx, 0, it.wz + it.len + 0.02], [gx, it.h, it.wz + it.len + 0.02], [gx, it.h, it.wz]], tone([132, 96, 66], z, it.wz % 2 ? 0 : -6));
         if (z > NEAR && z < 30) for (let y = 0.6; y < it.h; y += 0.6) seg([gx, y, it.wz], [gx, y, it.wz + it.len], `rgba(20,14,10,${0.35 * k})`, 0.6);
         return;
       }
-      case "ceiling": face([[-it.w, it.h, it.wz], [it.w, it.h, it.wz], [it.w, it.h, it.wz + it.len + 0.02], [-it.w, it.h, it.wz + it.len + 0.02]], tone([26, 18, 14], z, (it.wz | 0) % 5 === 0 ? 10 : 0)); return;
+      case "ceiling": face([[-it.w, it.h, it.wz], [it.w, it.h, it.wz], [it.w, it.h, it.wz + it.len + 0.02], [-it.w, it.h, it.wz + it.len + 0.02]], tone([52, 34, 24], z, (it.wz | 0) % 5 === 0 ? 18 : 0)); return;
       case "banner": {
         const X = it.x, d = -it.side * 0.02;
-        face([[X + d, 7.6, it.wz - 0.6], [X + d, 7.6, it.wz + 0.6], [X + d, 3.6, it.wz + 0.6], [X + d, 3.1, it.wz], [X + d, 3.6, it.wz - 0.6]], tone([110, 22, 28], z), tone([190, 150, 70], z), 1);
+        face([[X + d, 7.6, it.wz - 0.6], [X + d, 7.6, it.wz + 0.6], [X + d, 3.6, it.wz + 0.6], [X + d, 3.1, it.wz], [X + d, 3.6, it.wz - 0.6]], tone([180, 30, 40], z), tone([230, 190, 90], z), 1);
         face([[X + d * 2, 6.4, it.wz - 0.22], [X + d * 2, 6.4, it.wz + 0.22], [X + d * 2, 5.6, it.wz + 0.22], [X + d * 2, 5.6, it.wz - 0.22]], tone([190, 150, 70], z));
         return;
       }
@@ -465,10 +467,10 @@ const WildKit = (() => {
     const { side, X, wz, len, h, deep, rgb } = it, z1 = wz + len, k = 1 - fogK(Math.max(z, 0));
     const front = face([[X, 0, wz], [X, 0, z1], [X, h, z1], [X, h, wz]], tone(rgb, Math.max(z, 1)));
     if (S.D < wz) face([[X, 0, wz], [X + side * deep, 0, wz], [X + side * deep, h, wz], [X, h, wz]], tone(rgb, z, -12));
-    face([[X, h, wz], [X, h, z1], [X + side * deep * 0.5, h + it.roof, z1], [X + side * deep * 0.5, h + it.roof, wz]], tone([44, 34, 34], Math.max(z, 1)));
+    face([[X, h, wz], [X, h, z1], [X + side * deep * 0.5, h + it.roof, z1], [X + side * deep * 0.5, h + it.roof, wz]], tone(it.rf, Math.max(z, 1)));
     if (S.D < wz) face([[X, h, wz], [X + side * deep * 0.5, h + it.roof, wz], [X + side * deep, h, wz]], tone(rgb, z, -16));
     if (!front || z > 70) return;
-    const line = `rgba(16,12,10,${0.55 * k})`;
+    const line = `rgba(40,24,14,${0.8 * k})`;
     if (it.timber) {
       for (const y of [0.15, h * 0.48, h - 0.1]) seg([X, y, Math.max(wz, S.D + NEAR)], [X, y, z1], line, 1.2);
       for (let fz = 0; fz <= len; fz += 1.8) seg([X, 0, wz + fz], [X, h, wz + fz], line, 1.1);

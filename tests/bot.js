@@ -42,8 +42,10 @@ const URL = "file://" + require("path").resolve(__dirname, "../index.html");
           const g = tgt.geom, dist = Math.hypot(tgt.x - cam.offX, tgt.z), tof = dist / 66, k = cam.f / tgt.z * cam.zoom;
           const vx = tgt.prevX != null ? (tgt.x - tgt.prevX) * 60 : 0;
           E.mouse.x = (g.head[0] + vx * tof * k) * K; E.mouse.y = (g.head[1] - 0.5 * 7 * tof * tof * k) * K;
+          // hold fire while a townsperson stands between us and the target on screen
+          const blocked = figs.some(f => f.kind === "blue" && !f.dying && f.geom && f.z < tgt.z + 1 && f.geom.box[0] - 6 < g.head[0] && f.geom.box[2] + 6 > g.head[0]);
           if (!G.drawing && G.nock <= 0 && G.quiver > 0) { A.onDown(0); draws++; }
-          else if (G.drawing && G.draw >= 1) A.onUp(0);
+          else if (G.drawing && G.draw >= 1 && !blocked) A.onUp(0);
         } else if (G.drawing) A.onUp(0);
         for (const f of figs) f.prevX = f.x;
         A.update(1 / 60, t);

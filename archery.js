@@ -15,7 +15,7 @@ const ArcheryLevel = (() => {
   const K = WildKit, S = K.S;
   const GRAV = 7, VMIN = 13, VMAX = 66, DRAW_T = 1.0, SHAKE_T = 1.3, NOCK = 0.45, MAXQ = 24;
   const WALK = 2.8, EYE = 1.62, CROUCH = 1.2, TELE = 1.0, END_D = 546;
-  const PIXEL = { cell: 4, levels: 8, dots: 0.3, grain: 16, sat: 1.18 };
+  const PIXEL = { cell: 4, levels: 9, dots: 0.26, grain: 12, sat: 1.45, contrast: 1.3, lift: 6 };
 
   // ---------------------------------------------------------------- world layout
   const ZONES = [[-10, 165, "forest"], [165, 238, "meadow"], [238, 333, "town"], [333, 381, "court"], [381, 446, "hall"], [446, 506, "town"], [506, 640, "forest"]];
@@ -44,7 +44,7 @@ const ArcheryLevel = (() => {
     { type: "bush", x: -1.6, wz: 347.5, s: 0.75, hide: true },
     { type: "wall", wz: 381, h: 14, gate: [3.6, 5], towers: [-9, 9], rgb: [92, 86, 84], banners: [-5, 5], span: 10, thick: 1.5 },
     { type: "torch", x: -2.6, y: 3.6, wz: 380.85 }, { type: "torch", x: 2.6, y: 3.6, wz: 380.85 },
-    { type: "pillar", x: -1.1, wz: 387.4, h: 2.2, rad: 0.5, hide: true },
+    { type: "pillar", x: -1.1, wz: 387.4, h: 2.2, rad: 0.5, hide: true, rgb: [150, 120, 90] },
     { type: "wall", wz: 402, h: 9, gate: [2.6, 3.6], rgb: [66, 50, 40], span: 6, thick: 0.8 },
     { type: "pillar", x: 1.2, wz: 405.5, h: 2.2, rad: 0.5, hide: true },
     { type: "pedestal", x: -1.6, wz: 412, scroll: SCROLL },
@@ -612,14 +612,14 @@ const ArcheryLevel = (() => {
     // before an item at view depth z is drawn, draw the living things beyond it that it
     // could cover on screen (items carry a half-width `ext` in metres; none = could cover anything)
     const flush = (z, it) => {
-      if (z < 0) { drawFigures(left, t); left = []; return; }
+      if (z < 0) { drawFigures(left, t, { outline: 0.75 }); left = []; return; }
       if (!left.length || (it && it.ext === 0) || flushes >= 4) return;   // ponytail: past 4 layers the rest share the last one
       let x0 = -1e9, x1 = 1e9;
       if (it && it.ext != null && it.x != null && z > 0.5) { const [sx, , k] = project(it.x, 0, z); x0 = sx - it.ext * k - 4; x1 = sx + it.ext * k + 4; }
       const batch = left.filter(f => f.z > z && (!f.geom || (f.geom.box[2] > x0 && f.geom.box[0] < x1)));
       if (!batch.length) return;
       left = left.filter(f => !batch.includes(f)); flushes++;
-      drawFigures(batch, t, { embers: false });
+      drawFigures(batch, t, { embers: false, outline: 0.75 });
     };
     const extra = [];
     for (const a of stuck) { const wz = a.fig ? a.fig.z + S.D + a.off[2] - 0.05 : a.p[2]; extra.push({ wz, x: a.fig ? a.fig.x + a.off[0] : a.p[0], ext: 0.5, fn: () => drawStuck(a, t) }); }
@@ -727,67 +727,135 @@ const ArcheryLevel = (() => {
   }
 
   // ---------------------------------------------------------------- HUD + panels
+  // ---------------------------------------------------------------- HUD: pixel font, framed plates, pixel icons
+  const FONT = '"Silkscreen", ui-monospace, Menlo, monospace', GOLD = "#f0d48a", INK = "#f4ecd8";
+  const ICON = {
+    heart: [".XX.XX.", "XXXXXXX", "XXXXXXX", ".XXXXX.", "..XXX..", "...X..."],
+    meat:  ["...XXX.", "..XXXXX", "..XXXXX", "...XXX.", "..X....", ".XX....", "XX....."],
+    eye:   ["..XXXXX..", ".XX...XX.", "XX..X..XX", "XX.XXX.XX", ".XX...XX.", "..XXXXX.."],
+    arrow: ["..X..", ".XXX.", "X.X.X", "..X..", "..X..", "..X..", "..X..", ".X.X.", "X...X"],
+    deer:  ["X...X", ".X.X.", "..XXX", "..XX.", ".XXXX", "XXXX.", "X..X."],
+    skull: [".XXX.", "XXXXX", "X.X.X", "XXXXX", ".X.X."],
+  };
+  function icon(name, x, y, px, col) {
+    const b = ICON[name];
+    vctx.fillStyle = "rgba(0,0,0,0.9)";
+    for (let r = 0; r < b.length; r++) for (let c = 0; c < b[r].length; c++) if (b[r][c] === "X") vctx.fillRect(x + c * px + px * 0.6, y + r * px + px * 0.6, px, px);
+    vctx.fillStyle = col;
+    for (let r = 0; r < b.length; r++) for (let c = 0; c < b[r].length; c++) if (b[r][c] === "X") vctx.fillRect(x + c * px, y + r * px, px, px);
+  }
+  function txt(s, x, y, size, col = INK, align = "left", a = 1) {
+    vctx.font = `700 ${Math.round(size)}px ${FONT}`; vctx.textAlign = align; vctx.textBaseline = "middle"; vctx.globalAlpha = a;
+    const o = Math.max(1, Math.round(size * 0.09));
+    vctx.fillStyle = "rgba(0,0,0,0.9)"; vctx.fillText(s, x + o, y + o);
+    vctx.fillStyle = col; vctx.fillText(s, x, y); vctx.globalAlpha = 1;
+    return vctx.measureText(s).width;
+  }
+  // dark plate with a two-tone pixel frame and notched corners
+  function plate(x, y, w, h, k, edge = GOLD, a = 0.8) {
+    const b = Math.max(2, Math.round(2 * k));
+    vctx.fillStyle = `rgba(14,11,9,${a})`; vctx.fillRect(x + b, y + b, w - 2 * b, h - 2 * b);
+    vctx.fillStyle = "rgba(0,0,0,0.9)"; vctx.fillRect(x + b, y, w - 2 * b, b * 2); vctx.fillRect(x + b, y + h - b * 2, w - 2 * b, b * 2); vctx.fillRect(x, y + b, b * 2, h - 2 * b); vctx.fillRect(x + w - b * 2, y + b, b * 2, h - 2 * b);
+    vctx.fillStyle = edge; vctx.fillRect(x + b, y, w - 2 * b, b); vctx.fillRect(x + b, y + h - b, w - 2 * b, b); vctx.fillRect(x, y + b, b, h - 2 * b); vctx.fillRect(x + w - b, y + b, b, h - 2 * b);
+  }
+  function bar(x, y, w, h, v, segs, col, k, warn) {
+    const g = Math.max(1, Math.round(k)), sw = (w - g * (segs - 1)) / segs;
+    for (let i = 0; i < segs; i++) {
+      const f = clamp(v * segs - i, 0, 1), sx = x + i * (sw + g);
+      vctx.fillStyle = "rgba(255,255,255,0.1)"; vctx.fillRect(sx, y, sw, h);
+      if (f > 0) { vctx.fillStyle = warn ? "#ff4a3a" : col; vctx.fillRect(sx, y, sw * f, h); vctx.fillStyle = "rgba(255,255,255,0.35)"; vctx.fillRect(sx, y, sw * f, Math.max(1, h * 0.25)); }
+    }
+  }
   function hud(t) {
-    const k = hudK(), pad = 28 * k, VW = E.VW, VH = E.VH, ink = "200,215,235";
-    const [ax, ay] = aimPoint(t), [cxv, cyv] = [ax / SCALE * k, ay / SCALE * k];
-    if (G.phase === "play") {
-      crosshair(cxv, cyv, k, 12);
-      if (G.drawing) {                              // draw strength arc; goes red when the aim starts to shake
-        const shaking = G.hold > SHAKE_T;
-        vctx.strokeStyle = shaking ? "rgba(255,110,90,0.9)" : G.draw >= 1 ? "rgba(255,226,170,0.95)" : "rgba(220,235,255,0.75)";
-        vctx.lineWidth = 3 * k; vctx.beginPath(); vctx.arc(cxv, cyv, 22 * k, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * G.draw); vctx.stroke();
+    const k = hudK(), pad = 22 * k, VW = E.VW, VH = E.VH, play = G.phase === "play";
+    const [ax, ay] = aimPoint(t), cxv = ax / SCALE * k, cyv = ay / SCALE * k;
+    if (play) {                                    // crosshair: four ticks and a dot; draw strength as a ring of 12 pips
+      const shaking = G.drawing && G.hold > SHAKE_T, c = shaking ? "#ff6a50" : G.drawing && G.draw >= 1 ? GOLD : INK, r = 9 * k, L = 6 * k;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { vctx.fillStyle = "#000"; vctx.fillRect(cxv + dx * r - 2 * k + (dy ? 0 : dx * L / 2), cyv + dy * r - 2 * k + (dx ? 0 : dy * L / 2), dy ? 4 * k : L + 2 * k, dx ? 4 * k : L + 2 * k); }
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { vctx.fillStyle = c; vctx.fillRect(cxv + dx * r - k + (dy ? 0 : dx * L / 2), cyv + dy * r - k + (dx ? 0 : dy * L / 2), dy ? 2 * k : L, dx ? 2 * k : L); }
+      vctx.fillStyle = "#000"; vctx.fillRect(cxv - 2 * k, cyv - 2 * k, 4 * k, 4 * k); vctx.fillStyle = c; vctx.fillRect(cxv - k, cyv - k, 2 * k, 2 * k);
+      if (G.drawing) for (let i = 0; i < 12; i++) {
+        const a = -Math.PI / 2 + i / 12 * Math.PI * 2, on = G.draw * 12 > i, px = cxv + Math.cos(a) * 24 * k, py = cyv + Math.sin(a) * 24 * k;
+        vctx.fillStyle = "#000"; vctx.fillRect(px - 3 * k, py - 3 * k, 6 * k, 6 * k);
+        vctx.fillStyle = on ? c : "rgba(255,255,255,0.18)"; vctx.fillRect(px - 2 * k, py - 2 * k, 4 * k, 4 * k);
       }
     }
+    // top left: act badge, act name, stop
     const st = STOPS[G.stop], act = ACTS[G.act];
-    glowText(`THE ARCHER   ·   ACT ${G.act + 1} ${act.name}${st && G.fighting ? "   ·   " + st.name : ""}`, pad, pad, 13 * k, ink, 0.6, "left");
-    let line = pad + 24 * k;
-    if (G.fighting && foesLeft()) { glowText(`HOSTILE ${foesLeft()}`, pad, line, 11 * k, "255,140,110", 0.6, "left"); line += 18 * k; }
-    if (G.fighting && preyLeft()) { glowText(`PREY ${preyLeft()}`, pad, line, 11 * k, "200,220,120", 0.6, "left"); line += 18 * k; }
-    if (G.phase === "play" && !G.fighting && G.speed > 0.5) glowText("MOVING", pad, line, 11 * k, ink, 0.45, "left");
-    // detection: the most suspicious guard
+    plate(pad, pad, 300 * k, 56 * k, k);
+    vctx.fillStyle = "#c2412c"; vctx.fillRect(pad + 10 * k, pad + 10 * k, 36 * k, 36 * k); vctx.fillStyle = "rgba(255,255,255,0.25)"; vctx.fillRect(pad + 10 * k, pad + 10 * k, 36 * k, 4 * k);
+    txt(`${G.act + 1}`, pad + 28 * k, pad + 29 * k, 24 * k, INK, "center");
+    txt(act.name, pad + 56 * k, pad + 20 * k, 17 * k, GOLD);
+    txt(st && G.fighting ? st.name : G.phase === "play" && G.speed > 0.5 ? "on the move" : "the archer", pad + 56 * k, pad + 40 * k, 12 * k, INK, "left", 0.8);
+    let px = pad;
+    const pill = (label, n, col, ic) => { const w = 78 * k; plate(px, pad + 62 * k, w, 26 * k, k, col, 0.7); icon(ic, px + 8 * k, pad + 68 * k, 2 * k, col); txt(`${n}`, px + 30 * k, pad + 75 * k, 14 * k, INK); txt(label, px + 46 * k, pad + 75 * k, 9 * k, INK, "left", 0.6); px += w + 6 * k; };
+    if (G.fighting && foesLeft()) pill("FOE", foesLeft(), "#ff7a2a", "skull");
+    if (G.fighting && preyLeft()) pill("PREY", preyLeft(), "#b8d040", "deer");
+    // top right: the journey, five acts on one line, you on it
+    const jw = 260 * k, jx = VW - pad - jw, jy = pad + 28 * k;
+    plate(jx - 12 * k, pad, jw + 24 * k, 56 * k, k);
+    vctx.fillStyle = "rgba(255,255,255,0.18)"; vctx.fillRect(jx, jy - 2 * k, jw, 4 * k);
+    vctx.fillStyle = GOLD; vctx.fillRect(jx, jy - 2 * k, jw * clamp(S.D / END_D, 0, 1), 4 * k);
+    ACTS.forEach((A, i) => { const x = jx + jw * clamp(A.d / END_D, 0, 1) + (i === 4 ? 0 : 0); vctx.fillStyle = "#000"; vctx.fillRect(x - 4 * k, jy - 6 * k, 8 * k, 12 * k); vctx.fillStyle = i <= G.act ? GOLD : "#6a6050"; vctx.fillRect(x - 3 * k, jy - 5 * k, 6 * k, 10 * k); txt(`${i + 1}`, x, jy + 16 * k, 10 * k, i === G.act ? GOLD : INK, "center", i === G.act ? 1 : 0.5); });
+    const mx = jx + jw * clamp(S.D / END_D, 0, 1); icon("arrow", mx - 5 * k, jy - 24 * k + Math.sin(t * 5) * k, 2 * k, G.scroll ? "#ff6a50" : INK);
+    txt(G.scroll ? "SCROLL ✦" : "", jx, pad + 12 * k, 10 * k, "#ff9a70", "left");
+    // detection, top centre: eye, ten pips, state
     const guards = figs.filter(f => f.guard && !f.dying);
-    if (guards.length && G.phase === "play") {
-      const sus = G.alert ? 1 : Math.min(1, Math.max(...guards.map(f => f.sus || 0))), x = VW / 2, y = pad + 4 * k, w = 160 * k;
-      vctx.fillStyle = "rgba(200,210,225,0.12)"; vctx.fillRect(x - w / 2, y, w, 5 * k);
-      vctx.fillStyle = sus >= 1 ? "rgba(255,60,50,0.95)" : sus > 0.5 ? "rgba(255,170,80,0.9)" : "rgba(200,215,235,0.7)"; vctx.fillRect(x - w / 2, y, w * sus, 5 * k);
-      glowText(G.alert ? "ALERTED" : G.hidden ? "HIDDEN" : "EXPOSED", x, y + 18 * k, 11 * k, G.alert ? "255,110,90" : G.hidden ? "160,220,140" : "255,200,150", 0.75);
-      for (const f of guards) if (!G.alert && f.sus > 0.3 && f.geom) {      // ? over anyone who has noticed something
-        const [hx, hy, hr] = f.geom.head; glowText(f.sus > 0.75 ? "!" : "?", hx / SCALE * k, (hy - hr * 2.2) / SCALE * k, 16 * k, f.sus > 0.75 ? "255,120,80" : "255,220,150", 0.9);
+    if (guards.length && play) {
+      const sus = G.alert ? 1 : Math.min(1, Math.max(...guards.map(f => f.sus || 0))), w = 190 * k, x = VW / 2 - w / 2, y = pad;
+      const col = G.alert ? "#ff4a3a" : sus > 0.5 ? "#ffab3a" : G.hidden ? "#8fd86a" : INK;
+      plate(x, y, w, 44 * k, k, col);
+      icon("eye", x + 10 * k, y + 9 * k, 2.4 * k, col);
+      bar(x + 42 * k, y + 10 * k, w - 54 * k, 9 * k, sus, 10, col, k);
+      txt(G.alert ? "ALERTED" : G.hidden ? "HIDDEN" : "EXPOSED", x + 42 * k, y + 31 * k, 11 * k, col, "left", 0.95);
+      for (const f of guards) if (!G.alert && f.sus > 0.3 && f.geom) {      // ? or ! over anyone who has noticed something
+        const [hx, hy, hr] = f.geom.head, bx = hx / SCALE * k, by = (hy - hr * 2.6) / SCALE * k, hot = f.sus > 0.75;
+        plate(bx - 10 * k, by - 12 * k, 20 * k, 22 * k, k, hot ? "#ff6a40" : GOLD, 0.85); txt(hot ? "!" : "?", bx, by, 15 * k, hot ? "#ff6a40" : GOLD, "center");
       }
-    } else if (G.hidden && G.phase === "play") glowText("HIDDEN", VW / 2, pad + 22 * k, 11 * k, "160,220,140", 0.6);
-    recDot(t);
-    // health and hunger, bottom left
-    const bw = 180 * k;
-    for (const [i, v, label, ok, bad] of [[0, G.hp, "HEALTH", "190,215,240", "255,60,50"], [1, G.food, "HUNGER", "210,200,120", "255,150,60"]]) {
-      const y = VH - pad - 6 * k - i * 26 * k;
-      vctx.fillStyle = "rgba(200,210,225,0.12)"; vctx.fillRect(pad, y, bw, 6 * k);
-      vctx.fillStyle = `rgba(${v > 30 ? ok : bad},${v > 30 ? 0.8 : 0.6 + 0.4 * Math.sin(t * 8)})`; vctx.fillRect(pad, y, bw * v / 100, 6 * k);
-      glowText(label, pad + bw + 10 * k, y + 3 * k, 10 * k, ink, 0.45, "left");
-    }
-    // quiver, bottom right: one stroke per arrow
-    for (let i = 0; i < Math.max(G.quiver, 0); i++) {
-      const x = VW - pad - (i % 12 + 1) * 8 * k, y = VH - pad - 26 * k - Math.floor(i / 12) * 32 * k;
-      vctx.fillStyle = "rgba(220,235,255,0.8)"; vctx.fillRect(x, y, 2 * k, 24 * k);
-      vctx.beginPath(); vctx.moveTo(x - 2 * k, y + 20 * k); vctx.lineTo(x + 1 * k, y + 26 * k); vctx.lineTo(x + 4 * k, y + 20 * k); vctx.fill();
-    }
-    glowText(`${G.quiver}`, VW - pad, VH - pad - 44 * k - Math.floor(Math.max(0, G.quiver - 1) / 12) * 32 * k, 12 * k, G.quiver ? ink : "255,120,90", 0.7, "right");
+    } else if (G.hidden && play) { plate(VW / 2 - 50 * k, pad, 100 * k, 28 * k, k, "#8fd86a", 0.7); txt("HIDDEN", VW / 2, pad + 14 * k, 12 * k, "#8fd86a", "center"); }
+    // bottom left: heart + health, drumstick + hunger
+    const bw = 210 * k, by0 = VH - pad - 70 * k;
+    plate(pad, by0, bw + 56 * k, 70 * k, k);
+    icon("heart", pad + 12 * k, by0 + 12 * k, 2.6 * k, G.hp > 30 ? "#ff5a6a" : `rgba(255,70,60,${0.5 + 0.5 * Math.sin(t * 9)})`);
+    bar(pad + 40 * k, by0 + 14 * k, bw, 12 * k, G.hp / 100, 10, "#ff5a6a", k, G.hp <= 30);
+    icon("meat", pad + 12 * k, by0 + 40 * k, 2.6 * k, G.food > 30 ? "#e8a050" : `rgba(255,150,60,${0.5 + 0.5 * Math.sin(t * 9)})`);
+    bar(pad + 40 * k, by0 + 44 * k, bw, 12 * k, G.food / 100, 10, "#e8b050", k, G.food <= 20);
+    // bottom right: quiver
+    const qx = VW - pad - 150 * k, qy = VH - pad - 70 * k;
+    plate(qx, qy, 150 * k, 70 * k, k, G.quiver ? GOLD : "#ff6a50");
+    icon("arrow", qx + 14 * k, qy + 12 * k, 5 * k, G.quiver ? INK : "#ff6a50");
+    txt(`×${G.quiver}`, qx + 48 * k, qy + 37 * k, 26 * k, G.quiver ? INK : "#ff6a50");
     for (const e of figs) {                         // arrows at the screen edge for anything hostile out of frame
       if (!(e.foe) || e.dying || e.st === "delay" || !e.geom || (e.guard && !G.alert)) continue;
       const [hx, hy] = e.geom.head, x = hx / SCALE * k, y = hy / SCALE * k, m = 30 * k;
       if (x > m && x < VW - m && y > m && y < VH - m && e.z > 0.8) continue;
-      const ax2 = clamp(x, m, VW - m), ay2 = clamp(y, m, VH - m), a = Math.atan2(y - VH / 2, x - VW / 2), c = COL[e.kind].aura;
+      const ax2 = clamp(x, m * 3, VW - m * 3), ay2 = clamp(y, m * 4, VH - m * 4), a = Math.atan2(y - VH / 2, x - VW / 2), c = COL[e.kind].aura;
       vctx.save(); vctx.translate(ax2, ay2); vctx.rotate(a);
-      vctx.fillStyle = `rgba(${c},${0.6 + 0.4 * Math.sin(t * 10)})`; vctx.shadowColor = `rgba(${c},1)`; vctx.shadowBlur = 10 * k;
-      vctx.beginPath(); vctx.moveTo(12 * k, 0); vctx.lineTo(-8 * k, -9 * k); vctx.lineTo(-8 * k, 9 * k); vctx.closePath(); vctx.fill();
+      vctx.fillStyle = "#000"; vctx.beginPath(); vctx.moveTo(16 * k, 0); vctx.lineTo(-10 * k, -12 * k); vctx.lineTo(-10 * k, 12 * k); vctx.closePath(); vctx.fill();
+      vctx.fillStyle = `rgba(${c},${0.7 + 0.3 * Math.sin(t * 10)})`; vctx.beginPath(); vctx.moveTo(12 * k, 0); vctx.lineTo(-7 * k, -8 * k); vctx.lineTo(-7 * k, 8 * k); vctx.closePath(); vctx.fill();
       vctx.restore();
     }
-    if (G.bigT > 0) glowText(G.big, VW / 2, VH * 0.36, 26 * k, "255,214,170", Math.min(1, G.bigT) * 0.9);
-    if (G.msgT > 0) glowText(G.msg, VW / 2, VH * 0.2, 20 * k, ink, Math.min(1, G.msgT) * 0.9);
-    const stp = STOPS[G.stop];
-    if (G.phase === "play" && G.fighting && stp && stp.hunt && foesLeft() === 0 && preyLeft() > 0) glowText("SPACE  MOVE ON", VW / 2, VH * 0.27, 13 * k, "200,220,120", 0.55 + 0.3 * Math.sin(t * 4));
-    if (G.phase === "play" && stp && stp.scroll && SCROLL.here && foesLeft() === 0) glowText("CLICK THE SCROLL TO TAKE IT", VW / 2, VH * 0.27, 14 * k, "255,226,170", 0.6 + 0.4 * Math.sin(t * 5));
-    if (G.phase === "play" && G.quiver === 0 && arrows.length === 0) glowText("QUIVER EMPTY — PICK ARROWS UP AS YOU WALK", VW / 2, VH * 0.32, 12 * k, "255,160,120", 0.7);
-    if (G.phase === "play" && G.helpT > 0) glowText("HOLD CLICK DRAW  ·  RELEASE LOOSE  ·  RIGHT HOLD ZOOM  ·  ESC MENU", VW / 2, VH - pad - 3 * k, 12 * k, ink, Math.min(1, G.helpT) * 0.7);
+    // act banner and messages
+    if (G.bigT > 0) {
+      const a = Math.min(1, G.bigT), y = VH * 0.36, w = Math.min(VW - 2 * pad, 560 * k);
+      vctx.globalAlpha = a; plate(VW / 2 - w / 2, y - 34 * k, w, 68 * k, k, GOLD, 0.85);
+      vctx.fillStyle = "#c2412c"; vctx.fillRect(VW / 2 - w / 2 - 14 * k, y - 22 * k, 16 * k, 44 * k); vctx.fillRect(VW / 2 + w / 2 - 2 * k, y - 22 * k, 16 * k, 44 * k);
+      vctx.globalAlpha = 1; txt(G.big, VW / 2, y, 30 * k, GOLD, "center", a);
+    }
+    if (G.msgT > 0) txt(G.msg, VW / 2, VH * 0.2, 22 * k, INK, "center", Math.min(1, G.msgT));
+    const stp = STOPS[G.stop], hint = (s, col) => { const w = txt(s, -999, -999, 14 * k) + 30 * k; plate(VW / 2 - w / 2, VH * 0.27 - 16 * k, w, 32 * k, k, col, 0.75); txt(s, VW / 2, VH * 0.27, 14 * k, col, "center", 0.7 + 0.3 * Math.sin(t * 5)); };
+    if (play && G.fighting && stp && stp.hunt && foesLeft() === 0 && preyLeft() > 0) hint("SPACE  ·  MOVE ON", "#b8d040");
+    if (play && stp && stp.scroll && SCROLL.here && foesLeft() === 0) hint("CLICK THE SCROLL TO TAKE IT", GOLD);
+    if (play && G.quiver === 0 && arrows.length === 0) txt("QUIVER EMPTY — PICK ARROWS UP AS YOU WALK", VW / 2, VH * 0.33, 13 * k, "#ff9a70", "center");
+    if (play && G.helpT > 0) {                    // key caps
+      const a = Math.min(1, G.helpT), keys = [["LMB", "hold to draw"], ["RMB", "zoom"], ["ESC", "menu"]];
+      vctx.font = `700 ${Math.round(12 * k)}px ${FONT}`;
+      const ws = keys.map(([c, l]) => vctx.measureText(c).width + vctx.measureText(l).width + 34 * k), tot = ws.reduce((s, w) => s + w, 0) + 16 * k * (keys.length - 1);
+      let x = VW / 2 - tot / 2; const y = VH - pad - 16 * k;
+      vctx.globalAlpha = a;
+      keys.forEach(([c, l], i) => { const cw = vctx.measureText(c).width + 14 * k; plate(x, y - 13 * k, cw, 26 * k, k, INK, 0.85); vctx.globalAlpha = 1; txt(c, x + cw / 2, y, 12 * k, INK, "center", a); txt(l, x + cw + 8 * k, y, 12 * k, INK, "left", 0.8 * a); vctx.globalAlpha = a; x += ws[i] + 16 * k; });
+      vctx.globalAlpha = 1;
+    }
   }
 
   const KEYS = [["Hold left", "Draw (about 1 s), release to loose"], ["Right hold", "Zoom for long shots"], ["Space", "Move on from a hunt · Esc menu"]];

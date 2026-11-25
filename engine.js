@@ -31,7 +31,7 @@ const norm3 = v => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] /
 const E = { W: 0, H: 0, VW: 0, VH: 0, mouse: { x: 0, y: 0 }, level: null, keys: {}, idSeq: 0, embers: [] };
 // camera: pinhole at height camH looking down +z. zoom/fx/fy crop the view around a stage point (scope).
 const cam = { f: 1, hor: 0, cx: 0, camH: 1.6, zoom: 1, fx: 0, fy: 0, offX: 0, bend: 0 };   // offX: camera's lateral position, bend: road curvature
-let view, vctx, scene, sctx, F, fctx, C, cctx, Rm, rmctx, Wp, wpctx, half, hctx, s1, s1ctx, s2, s2ctx, vignette;
+let view, vctx, scene, sctx, F, fctx, C, cctx, Rm, rmctx, Wp, wpctx, half, hctx, s1, s1ctx, s2, s2ctx, vignette, OL, olctx;
 
 // stage = unzoomed scene pixels; view = what is on screen after scope zoom
 const stage = (x, y, z) => [cam.cx + (x - cam.offX + cam.bend * z * z) * cam.f / z, cam.hor + (cam.camH - y) * cam.f / z];
@@ -55,6 +55,7 @@ function engineResize() {
   half = mk(W >> 1, H >> 1); hctx = half.getContext("2d");
   s1 = mk(W >> 2, H >> 2); s1ctx = s1.getContext("2d");
   s2 = mk(Math.ceil(W / 12), Math.ceil(H / 12)); s2ctx = s2.getContext("2d");
+  OL = mk(W >> 2, H >> 2); olctx = OL.getContext("2d");               // dark halo for opts.outline
   for (const c of [hctx, s1ctx, s2ctx]) c.imageSmoothingQuality = "high";
   vignette = vctx.createRadialGradient(E.VW / 2, E.VH / 2, Math.min(E.VW, E.VH) * 0.25, E.VW / 2, E.VH / 2, Math.max(E.VW, E.VH) * 0.75);
   vignette.addColorStop(0, "rgba(0,0,0,0)"); vignette.addColorStop(1, "rgba(0,0,0,0.85)");
@@ -559,6 +560,11 @@ function drawFigures(list, t, opts = {}) {
   // rim = body minus its own blur: only the edge band survives
   rmctx.globalCompositeOperation = "source-over"; rmctx.clearRect(0, 0, W, H); rmctx.drawImage(F, 0, 0);
   rmctx.globalCompositeOperation = "destination-out"; rmctx.drawImage(s1, 0, 0, W, H);
+  if (opts.outline) {                                      // dark halo behind the bodies so they read on bright scenery
+    olctx.globalCompositeOperation = "copy"; olctx.drawImage(s1, 0, 0);
+    olctx.globalCompositeOperation = "source-in"; olctx.fillStyle = "#05060a"; olctx.fillRect(0, 0, OL.width, OL.height);
+    sctx.globalAlpha = opts.outline; sctx.drawImage(OL, 0, 0, W, H); sctx.drawImage(OL, 0, 0, W, H); sctx.globalAlpha = 1;
+  }
   // body opaque first so it stays saturated, then additive halo / glow / rim / core
   sctx.globalAlpha = 0.88; sctx.drawImage(F, 0, 0);
   sctx.globalCompositeOperation = "lighter";
@@ -593,7 +599,7 @@ function post(t, fx) {
   if (fx.dmg > 0) { vctx.fillStyle = `rgba(160,0,0,${fx.dmg * 0.6})`; vctx.fillRect(0, 0, VW, VH); }
 }
 
-// ---------- optional pixel-art pass (post fx.pixel = {cell, levels, dots, grain}) ----------
+// ---------- optional pixel-art pass (post fx.pixel = {cell, levels, dots, grain, sat, contrast, lift}) ----------
 // The scene is shrunk to a coarse grid, stepped to a few levels per channel
 // through a 4x4 ordered (Bayer) dither in a gamma-ish space so the darks keep
 // detail, sensor grain is added per cell, and an optional dark mesh turns each
@@ -612,13 +618,13 @@ function pixelate(o, ox, oy, s) {
     }
   }
   pixctx.drawImage(scene, 0, 0, E.W, E.H, 0, 0, E.VW / cell, E.VH / cell);
-  const img = pixctx.getImageData(0, 0, pw, ph), d = img.data, gr = o.grain ?? 14, sat = o.sat ?? 1.12;
+  const img = pixctx.getImageData(0, 0, pw, ph), d = img.data, gr = o.grain ?? 14, sat = o.sat ?? 1.12, con = o.contrast ?? 1, lift = o.lift ?? 0;
   for (let y = 0, i = 0; y < ph; y++) for (let x = 0; x < pw; x++, i += 4) {
     const b = BAYER4[(y & 3) * 4 + (x & 3)], n = (Math.random() - 0.5) * gr;
-    const r = d[i], g = d[i + 1], bl = d[i + 2], m = (r + g + bl) / 3;
-    d[i] = pixLut[clamp(m + (r - m) * sat + n, 0, 255) << 4 | b];
-    d[i + 1] = pixLut[clamp(m + (g - m) * sat + n, 0, 255) << 4 | b];
-    d[i + 2] = pixLut[clamp(m + (bl - m) * sat + n, 0, 255) << 4 | b];
+    const r = d[i], g = d[i + 1], bl = d[i + 2], m = (r + g + bl) / 3, c = v => (v - 96) * con + 96 + lift + n;   // contrast pivots low: night scenes stay dark, lit parts punch
+    d[i] = pixLut[clamp(c(m + (r - m) * sat), 0, 255) << 4 | b];
+    d[i + 1] = pixLut[clamp(c(m + (g - m) * sat), 0, 255) << 4 | b];
+    d[i + 2] = pixLut[clamp(c(m + (bl - m) * sat), 0, 255) << 4 | b];
   }
   pixctx.putImageData(img, 0, 0);
   vctx.imageSmoothingEnabled = false;

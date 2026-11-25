@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Hold The Road</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&family=JetBrains+Mono:wght@400;500&family=Silkscreen:wght@400;700&display=swap">
 <style>
   :root { --bg: #0b0d10; --ink: #c8d7eb; --dim: rgba(200,215,235,0.45); --orange: #ff7a2a; --blue: #5aaaff; }
   html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
@@ -61,6 +61,20 @@
   #panel button.primary { color: #1a0d05; background: #ff9a5a; border-color: #ff9a5a; box-shadow: 0 0 22px rgba(255,122,42,0.35); }
   #panel button:hover { filter: brightness(1.12); }
   #panel button:focus-visible { outline: 2px solid #9fd0ff; outline-offset: 2px; }
+  /* The Archer: a game skin on the same card */
+  #panel.archer { background: rgba(16,12,9,0.96); border: 3px solid #f0d48a; box-shadow: 0 0 0 3px #000, inset 0 0 0 3px #3a2a16, 0 30px 80px rgba(0,0,0,0.6); }
+  #panel.archer .eyebrow, #panel.archer h2, #panel.archer button, #panel.archer .keys dt, #panel.archer .stats dt, #panel.archer .stats dd { font-family: "Silkscreen", ui-monospace, monospace; }
+  #panel.archer .eyebrow { color: #f0d48a; letter-spacing: 0.12em; }
+  #panel.archer h2 { font-weight: 700; font-size: 36px; color: #f4ecd8; text-shadow: 3px 3px 0 #000; }
+  #panel.archer h2.ok { color: #9fd0ff; } #panel.archer h2.bad { color: #ff8a7a; }
+  #panel.archer .dot { border-radius: 0; box-shadow: 2px 2px 0 #000; }
+  #panel.archer .dot.green { background: #b8d040; }
+  #panel.archer .note { border-left: 3px solid #f0d48a; background: rgba(240,212,138,0.07); }
+  #panel.archer .keys dt { border: 2px solid #f4ecd8; border-bottom-width: 4px; border-radius: 2px; font-weight: 700; }
+  #panel.archer button { font-weight: 700; font-size: 16px; letter-spacing: 0.06em; border: 3px solid #000; background: #2a2018; color: #f4ecd8; box-shadow: inset 0 0 0 2px #6a5638, 0 4px 0 #000; }
+  #panel.archer button.primary { background: #f2b54a; color: #2a1606; box-shadow: inset 0 -4px 0 #b8761e, inset 0 0 0 2px #ffe0a0, 0 4px 0 #000; }
+  #panel.archer button:hover { transform: translateY(-1px); filter: brightness(1.1); }
+  #panel.archer button:active { transform: translateY(3px); box-shadow: inset 0 0 0 2px #6a5638; }
   @media (max-width: 480px) { #panel { padding: 22px 18px; } #panel h2 { font-size: 26px; } }
 </style>
 </head>
@@ -93,6 +107,7 @@
   const LEVELS = { bank: BankLevel, chase: ChaseLevel, metro: MetroLevel, street: StreetLevel, road: RoadLevel, archery: ArcheryLevel };
   function play(name) {
     menu.hidden = true;
+    document.getElementById("panel").classList.toggle("archer", name === "archery");
     try { history.replaceState(null, "", "#" + name); } catch (_) {}
     setLevel(LEVELS[name]);
   }
