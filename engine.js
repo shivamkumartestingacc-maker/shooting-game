@@ -372,7 +372,7 @@ function drawFigures(list, t, opts = {}) {
   const W = E.W, H = E.H;
   fctx.clearRect(0, 0, W, H); cctx.clearRect(0, 0, W, H); wpctx.clearRect(0, 0, W, H);
   hctx.clearRect(0, 0, half.width, half.height);
-  for (const e of [...list].sort((a, b) => b.z - a.z)) {
+  for (const e of [...list].filter(e => e.z > 0.8).sort((a, b) => b.z - a.z)) {   // nothing behind the lens
     const g = e.geom = buildBody(e, t), c = COL[e.kind];
     const burning = e.dissolve > 0;
     const a = Math.min(1, e.alpha) * (0.82 + 0.18 * hash(e.id, 999, Math.floor(t * 20))) * (burning ? 1 - e.dissolve * 0.3 : 1);
@@ -431,7 +431,7 @@ function drawFigures(list, t, opts = {}) {
 }
 
 function hitTest(list, vx, vy) {
-  for (const e of list.filter(e => !e.dying && e.geom && e.alpha > 0.3).sort((a, b) => a.z - b.z)) {
+  for (const e of list.filter(e => !e.dying && e.geom && e.alpha > 0.3 && e.z > 0.8).sort((a, b) => a.z - b.z)) {
     const [hx, hy, hr] = e.geom.head, head = Math.hypot(vx - hx, vy - hy) < hr;
     if (head || sctx.isPointInPath(e.geom.path, vx, vy)) return { e, head };
   }
@@ -536,8 +536,8 @@ let lastTs = 0;
 function frame(ts) {
   const dt = Math.min(0.05, (ts - lastTs) / 1000 || 0); lastTs = ts;
   const t = ts / 1000;
+  requestAnimationFrame(frame);                  // schedule first: one bad frame must not freeze the game
   E.level.update(dt, t); E.level.render(t);
-  requestAnimationFrame(frame);
 }
 function startEngine(canvas, level) {
   view = canvas; vctx = view.getContext("2d");

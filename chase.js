@@ -5,7 +5,10 @@
 // the side windows or stand up through the sunroof to fire back.
 // Every pane takes four hits: cracks, more cracks, frosted, shattered.
 // Shatter the rear glass and you can reach the driver: kill him and
-// the car crashes. Pedestrians and other drivers are blue: never hit.
+// the car crashes. Waves: one car, bikes, another car with an escort,
+// more bikes, then two cars at once. Bikes carry a rider and a gunman
+// on the back; drop the rider and the bike goes down.
+// Pedestrians and other drivers are blue: never hit.
 // =====================================================================
 const ChaseLevel = (() => {
   const LANES = [-3.5, 0, 3.5], ROAD = 7.2, FACADE = 10.5, SIDEWALK = 8.7;
@@ -27,7 +30,16 @@ const ChaseLevel = (() => {
   ];
   const SIGNS = ["HOTEL", "BAR", "24H", "PHARMACY", "PAWN", "DINER", "BOOKS", "LAUNDRY", "RECORDS", "NOODLES"];
 
-  let W, H, G, enemy, cars, peds, blocks, lamps, sky, mWin, mwx, mSil, msx, mLow, mlx;
+  const CREWS = { 5: ["driver", "front", "rearL", "rearM", "rearR"], 4: ["driver", "front", "rearL", "rearR"], 3: ["driver", "front", "rearM"] };
+  const WAVES = [
+    { title: "", cars: [5], bikes: 0 },
+    { title: "BIKES COMING UP", cars: [], bikes: 2 },
+    { title: "SECOND CAR", cars: [4], bikes: 1 },
+    { title: "MORE BIKES", cars: [], bikes: 3 },
+    { title: "TWO CARS", cars: [4, 4], bikes: 0 },
+  ];
+  const BL = 2.1;                                  // bike length
+  let W, H, G, cars, bikes, foes, peds, blocks, lamps, sky, mWin, mwx, mSil, msx, mLow, mlx, mBike, mbx;
 
   // ------------------------------------------------------------------ setup
   const glassState = tint => ({ stage: 0, cracks: [], open: false, tint });
@@ -43,10 +55,9 @@ const ChaseLevel = (() => {
 
   function init() {
     G = { phase: "brief", hp: 100, ammo: MAG, cool: 0, shake: 0, dmg: 0, muzzle: 0, msg: "", msgT: 0, time: 0, shots: 0, hits: 0,
-      endT: 0, reason: "", leanT: 3, V: CRUISE, dist: 0, wcracks: [], sparks: [], shards: [], smoke: [], crash: null, lampLight: 0, laneT: 2, helpT: 8 };
-    enemy = makeCar({ kind: "enemy", x: 0, z: 9, tone: [10, 12, 15] });
-    for (const s of SEATS) seat(enemy, s, "red", s.role === "driver" ? null : "rifle");
-    cars = [enemy]; peds = []; blocks = []; lamps = [];
+      endT: 0, reason: "", leanT: 3, V: CRUISE, dist: 0, wcracks: [], sparks: [], shards: [], smoke: [], lampLight: 0, helpT: 8, wave: 0, nextWaveT: 2.5, stopped: 0 };
+    cars = []; bikes = []; foes = []; peds = []; blocks = []; lamps = [];
+    spawnWave(0); cars[0].z = 9;
     for (const side of [-1, 1]) { let z = -5; while (z < 170) z = addBlock(side, z); }
     for (let z = 8; z < 160; z += 15) lamps.push({ z, side: (Math.round(z / 15) % 2) ? 1 : -1 });
     for (const side of [-1, 1]) for (let z = 6 + Math.random() * 10; z < 150; z += 14 + Math.random() * 30) cars.push(makeCar({ x: side * 6.25, z, kind: "parked", tone: [9 + Math.random() * 8 | 0, 11 + Math.random() * 8 | 0, 14 + Math.random() * 8 | 0] }));
@@ -65,8 +76,33 @@ const ChaseLevel = (() => {
     peds.push(makeFigure({ kind: "blue", x: side * (SIDEWALK + (Math.random() - 0.5) * 2), z, yaw: toward ? 0 : Math.PI,
       walkW: 1, speed: 1.1 + Math.random() * 0.5, toward, role: "ped" }));
   }
+  function spawnWave(i) {
+    const w = WAVES[i]; G.wave = i; if (w.title) say(w.title, 2.2);
+    foes = foes.filter(f => !foeDone(f));
+    const lanes = [...LANES].sort(() => Math.random() - 0.5);
+    w.cars.forEach((n, j) => {
+      const c = makeCar({ kind: "enemy", x: lanes[j], lane: lanes[j], z: 45 + j * 16, slot: w.cars.length > 1 ? [8, 14][j] : 8.5, laneT: 2 + j * 1.5, tone: [10, 12, 15] });
+      for (const role of CREWS[n]) seat(c, SEATS.find(q => q.role === role), "red", role === "driver" ? null : "rifle");
+      cars.push(c); foes.push(c);
+    });
+    for (let j = 0; j < w.bikes; j++) spawnBike(j);
+    if (w.bikes) noise(1.4, "lowpass", 170, 0.55, 1.3);          // engines roaring up behind
+  }
+  const foeDone = f => !!f.crash || f.occ.every(e => e.dying);
+  function spawnBike(j) {
+    const side = j % 2 ? 1 : -1;
+    const b = { kind: "bike", x: side * (4.4 + Math.random()), z: -2 - j * 2.5, tx: (Math.random() - 0.5) * 8, slot: 6 + Math.random() * 6,
+      laneT: 1 + Math.random(), vx: 0, yaw: 0, tilt: 0, occ: [], crash: null };
+    for (const [s, weapon] of [[{ role: "rider", x: 0, z: 0.9, y: 0.36 }, null], [{ role: "pillion", x: 0, z: 0.45, y: 0.4 }, "pistol"]]) {
+      const e = makeFigure({ kind: "red", weapon, sit: 1, yaw: Math.PI, pose: weapon ? "rifle" : "reach" });
+      Object.assign(e, { bike: b, seat: s, lean: 0, rise: 0, turn: 0, st: "in", tm: 0, mode: null });
+      b.occ.push(e);
+    }
+    bikes.push(b); foes.push(b);
+  }
   function spawnCiv() {
-    const lanes = LANES.filter(l => Math.abs(l - enemy.x) > 2);
+    const lanes = LANES.filter(l => !foes.some(f => f.kind === "enemy" && !f.crash && Math.abs(l - f.x) < 2));
+    if (!lanes.length) return;
     const car = makeCar({ kind: "civ", x: lanes[(Math.random() * lanes.length) | 0], z: 110 + Math.random() * 30, speed: CRUISE - 6 - Math.random() * 4,
       tone: [16 + Math.random() * 10 | 0, 18 + Math.random() * 10 | 0, 22 + Math.random() * 10 | 0] });
     seat(car, SEATS[0], "blue", null);
@@ -78,7 +114,7 @@ const ChaseLevel = (() => {
   function resize() {
     W = E.W; H = E.H;
     cam.f = H * 0.95; cam.hor = H * 0.4; cam.cx = W / 2; cam.camH = 1.35;
-    mWin = mk(W, H); mwx = mWin.getContext("2d"); mSil = mk(W, H); msx = mSil.getContext("2d"); mLow = mk(W, H); mlx = mLow.getContext("2d");
+    mWin = mk(W, H); mwx = mWin.getContext("2d"); mBike = mk(W, H); mbx = mBike.getContext("2d"); mSil = mk(W, H); msx = mSil.getContext("2d"); mLow = mk(W, H); mlx = mLow.getContext("2d");
     // distant towers at the end of the street, drawn once
     sky = mk(W * 2, H * 0.6); const s = sky.getContext("2d"), r = mulberry(9);
     for (let i = 0; i < 60; i++) {
@@ -301,6 +337,22 @@ const ChaseLevel = (() => {
       if (s.role === "driver") e.curlOverride = 0.9;
     } else e.rise = Math.max(0, e.rise - dt * 1.5);
   }
+  // bike local -> world, with the roll of a falling bike
+  function bw(b, lx, ly, lz) {
+    const roll = b.tilt * (b.crashDir || 1), x1 = lx * Math.cos(roll) + ly * Math.sin(roll), y1 = -lx * Math.sin(roll) + ly * Math.cos(roll);
+    const c = Math.cos(b.yaw), s = Math.sin(b.yaw), dz = lz - BL / 2;
+    return [b.x + x1 * c + dz * s, y1, b.z + BL / 2 - x1 * s + dz * c];
+  }
+  function placeBike(e) {
+    const b = e.bike, s = e.seat, [x, , z] = bw(b, s.x, 0, s.z);
+    e.x = x; e.z = z; e.y0 = s.y;
+    const fwd = Math.PI - b.yaw, back = yawToward(e, cam.offX, 0);
+    let d = back - fwd; d = Math.atan2(Math.sin(d), Math.cos(d));
+    if (e.dying) return;
+    e.yaw = fwd + d * smooth(e.turn); e.sit = 1;
+    e.pose = e.turn > 0.4 && e.weapon ? "aim" : e.weapon ? "rifle" : "reach";
+    if (!e.weapon) e.curlOverride = 0.9;
+  }
   function updateShooter(e, dt) {
     if (e.dying || !e.weapon) return;
     const k = e.mode === "pop" ? "rise" : e.mode === "inside" ? "turn" : "lean";
@@ -354,70 +406,101 @@ const ChaseLevel = (() => {
     cars = cars.filter(c => c.kind !== "civ" || c.z > 0.9);
     if (G.phase === "play" && cars.filter(c => c.kind === "civ").length < 2 && Math.random() < dt * 0.25) spawnCiv();
 
-    driveEnemy(dt, t);
-    if (G.phase === "play" && !G.crash) {
+    for (const c of cars) if (c.kind === "enemy") { if (c.crash) updateCarCrash(c, dt); else driveEnemy(c, dt, t); }
+    cars = cars.filter(c => !(c.kind === "enemy" && c.crash && c.z < -C.len - 2));
+    for (const b of bikes) { updateBike(b, dt, t); for (const e of b.occ) { animate(e, dt); if (updateDeath(e, dt)) e.gone = true; placeBike(e); } }
+    bikes = bikes.filter(b => !(b.crash && b.z < -3));
+
+    if (G.phase === "play") {
+      const active = foes.filter(f => !f.crash);
+      const shooters = active.flatMap(f => f.occ).filter(e => e.weapon && !e.dying);
+      const outNow = shooters.filter(e => e.st !== "in").length, cap = active.length > 2 ? 3 : 2;
       G.leanT -= dt;
-      const shooters = enemy.occ.filter(e => e.weapon && !e.dying);
-      const outNow = shooters.filter(e => e.st !== "in").length;
-      if (G.leanT <= 0 && outNow < 2) {
+      if (G.leanT <= 0 && outNow < cap) {
         const ready = shooters.filter(e => e.st === "in");
         if (ready.length) {
           const e = ready[(Math.random() * ready.length) | 0];
-          const rearOpen = enemy.glass.rear.stage >= 4 && e.seat.z < 2.5;
-          e.mode = rearOpen && Math.random() < 0.5 ? "inside" : e.seat.pop ? "pop" : "lean";
-          if (e.mode === "lean") enemy.glass[e.seat.lean].open = true;    // window rolled down
+          if (e.bike) e.mode = "inside";                           // the man on the back twists round
+          else {
+            const car = e.car, rearOpen = car.glass.rear.stage >= 4 && e.seat.z < 2.5;
+            e.mode = rearOpen && Math.random() < 0.5 ? "inside" : e.seat.pop ? "pop" : "lean";
+            if (e.mode === "lean") car.glass[e.seat.lean].open = true;    // window rolled down
+          }
           e.st = "out";
         }
-        G.leanT = 1.3 + Math.random() * 2 + shooters.length * 0.15;
+        G.leanT = 1.1 + Math.random() * 1.8 + shooters.length * 0.08;
       }
-      for (const e of enemy.occ) updateShooter(e, dt);
+      for (const e of shooters) updateShooter(e, dt);
+      // next wave once this one is stopped
+      if (foes.every(foeDone) && (G.nextWaveT -= dt) <= 0) {
+        if (G.wave + 1 < WAVES.length) { spawnWave(G.wave + 1); G.nextWaveT = 2.5; }
+        else { G.phase = "clearing"; G.endT = 0; say("THE CREW IS FINISHED", 2.4); }
+      }
     }
-    // our car follows the getaway lane loosely
-    cam.offX = ease(cam.offX, clamp(enemy.x * 0.55, -2.2, 2.2), 0.8, dt);
-    if (G.crash) updateCrash(dt);
+    if (G.phase === "clearing") { G.V = ease(G.V, 0, 0.9, dt); if ((G.endT += dt) > 3) { G.phase = "win"; G.endT = 0; showEnd(); } }
+    // our car follows the getaway loosely
+    const act = foes.filter(f => !f.crash && f.z > 1);
+    if (act.length) cam.offX = ease(cam.offX, clamp(act.reduce((s, f) => s + f.x, 0) / act.length * 0.55, -2.2, 2.2), 0.8, dt);
     if (G.phase === "fail" || G.phase === "win") G.endT += dt;
   }
 
-  function driveEnemy(dt, t) {
-    if (G.crash) return;
-    if ((G.laneT -= dt) <= 0) {
-      const free = LANES.filter(l => !cars.some(c => c.kind === "civ" && Math.abs(c.x - l) < 1 && c.z > enemy.z - 4 && c.z < enemy.z + 25));
-      const opts = free.filter(l => l !== enemy.lane);
-      if (opts.length) enemy.lane = opts[(Math.random() * opts.length) | 0];
-      G.laneT = 2.5 + Math.random() * 3.5;
+  function driveEnemy(c, dt, t) {
+    if ((c.laneT -= dt) <= 0) {
+      const taken = cars.filter(o => o !== c && (o.kind === "civ" || (o.kind === "enemy" && !o.crash)) && o.z > c.z - 6 && o.z < c.z + 25);
+      const opts = LANES.filter(l => l !== c.lane && !taken.some(o => Math.abs((o.lane ?? o.x) - l) < 1));
+      if (opts.length) c.lane = opts[(Math.random() * opts.length) | 0];
+      c.laneT = 2.5 + Math.random() * 3.5;
     }
     // swerve out of a civilian's way
-    if (cars.some(c => c.kind === "civ" && Math.abs(c.x - enemy.lane) < 1 && c.z > enemy.z && c.z < enemy.z + 12)) G.laneT = 0;
-    const ax = (enemy.lane - enemy.x) * 2.2 - enemy.vx * 2.4;
-    enemy.vx += ax * dt; enemy.x += enemy.vx * dt;
-    enemy.yaw = clamp(enemy.vx * 0.07, -0.25, 0.25);
-    const want = 8.5 + 2.2 * Math.sin(t * 0.33) + 1.2 * Math.sin(t * 0.81);
-    enemy.z = ease(enemy.z, want, 0.7, dt);
+    if (cars.some(o => o.kind === "civ" && Math.abs(o.x - c.lane) < 1 && o.z > c.z && o.z < c.z + 12)) c.laneT = 0;
+    const ax = (c.lane - c.x) * 2.2 - c.vx * 2.4;
+    c.vx += ax * dt; c.x += c.vx * dt;
+    c.yaw = clamp(c.vx * 0.07, -0.25, 0.25);
+    const want = c.slot + 2.2 * Math.sin(t * 0.33 + c.slot) + 1.2 * Math.sin(t * 0.81);
+    c.z = ease(c.z, want, c.z > 25 ? 0.35 : 0.7, dt);
+  }
+  function updateBike(b, dt, t) {
+    if (b.crash) {                                             // down: slides, sparks, left behind
+      b.crash.t += dt; b.vw = ease(b.vw, 0, 1.8, dt); b.z -= (G.V - b.vw) * dt;
+      b.tilt = Math.min(1.45, b.tilt + dt * 3.2); b.x += b.crashDir * dt * 2;
+      if (b.geo && b.z > 1 && Math.random() < 0.9) {
+        const [x, y, z] = bw(b, 0, 0.05, 0.8), p = project(x, y, z);
+        for (let i = 0; i < 3; i++) G.sparks.push({ x: p[0], y: p[1], vx: (Math.random() - 0.5) * 220, vy: -Math.random() * 90, g: 380, age: 0, life: 0.2 + Math.random() * 0.3 });
+      }
+      return;
+    }
+    if ((b.laneT -= dt) <= 0) { b.tx = clamp((Math.random() - 0.5) * 9.5, -5, 5); b.laneT = 1.2 + Math.random() * 2; }
+    const ax = (b.tx - b.x) * 3 - b.vx * 2.6;
+    b.vx += ax * dt; b.x += b.vx * dt;
+    b.yaw = clamp(b.vx * 0.08, -0.3, 0.3);
+    b.z = ease(b.z, b.slot + 1.5 * Math.sin(t * 0.7 + b.slot), 0.9, dt);
   }
 
-  function crash() {
-    if (G.crash) return;
-    const dir = enemy.x >= 0 ? 1 : -1;
-    G.crash = { t: 0, dir, hit: false };
-    say("THE DRIVER IS DOWN", 2);
+  function crashCar(c) {
+    if (c.crash) return;
+    c.crash = { t: 0, dir: c.x >= 0 ? 1 : -1, hit: false }; c.vw = G.V; G.stopped++;
+    say("DRIVER DOWN", 1.6);
   }
-  function updateCrash(dt) {
-    const c = G.crash; c.t += dt;
-    enemy.x = ease(enemy.x, c.dir * 6.6, 1.6, dt);
-    enemy.yaw = ease(enemy.yaw, c.dir * 0.95, 2.2, dt);
-    enemy.z = ease(enemy.z, 9.5, 1.2, dt);
-    G.V = ease(G.V, 0, 1.1, dt);
-    if (c.t > 0.7 && !c.hit) {
-      c.hit = true; G.shake = 20; sfx.thud(); sfx.ping();
-      enemy.occ.filter(e => !e.dying).forEach((e, i) => setTimeout(() => { e.dying = true; }, 250 + i * 220));
-      const [x, y] = cp(enemy, [0, 0.8, C.len]);
+  function updateCarCrash(c, dt) {
+    const k = c.crash; k.t += dt;
+    c.vw = ease(c.vw, 0, 1.4, dt); c.z -= (G.V - c.vw) * dt;
+    c.x = ease(c.x, k.dir * 6.6, 1.6, dt); c.yaw = ease(c.yaw, k.dir * 0.95, 2.2, dt);
+    if (k.t > 0.7 && !k.hit) {
+      k.hit = true; G.shake = Math.max(G.shake, 12); sfx.thud(); sfx.ping();
+      c.occ.filter(e => !e.dying).forEach((e, i) => setTimeout(() => { e.dying = true; }, 250 + i * 220));
+      const [x, y] = cp(c, [0, 0.8, C.len]);
       for (let i = 0; i < 40; i++) G.sparks.push({ x, y, vx: (Math.random() - 0.5) * 300, vy: -Math.random() * 200, g: 500, age: 0, life: 0.3 + Math.random() * 0.4 });
     }
-    if (c.hit && Math.random() < 0.6) {
-      const [x, y, k] = cp(enemy, [c.dir * 0.4, 1.0, C.len - 0.3]);
-      G.smoke.push({ x, y, vx: (Math.random() - 0.5) * 10, vy: -15 - Math.random() * 20, age: 0, life: 2.5, r: 0.3 * k });
+    if (k.hit && c.z > 1 && Math.random() < 0.6) {
+      const [x, y, kk] = cp(c, [k.dir * 0.4, 1.0, C.len - 0.3]);
+      G.smoke.push({ x, y, vx: (Math.random() - 0.5) * 10, vy: -15 - Math.random() * 20, age: 0, life: 2, r: 0.3 * kk });
     }
-    if (c.t > 3.2 && G.phase === "play") { G.phase = "win"; G.endT = 0; showEnd(); }
+  }
+  function crashBike(b) {
+    if (b.crash) return;
+    b.crash = { t: 0 }; b.crashDir = b.x >= cam.offX ? 1 : -1; b.vw = G.V; G.stopped++;
+    sfx.thud(); say("BIKE DOWN", 1.4);
+    b.occ.filter(e => !e.dying).forEach(e => setTimeout(() => { e.dying = true; }, 300));
   }
 
   // ------------------------------------------------------------------ shooting
@@ -435,8 +518,11 @@ const ChaseLevel = (() => {
     if (hit && !blocked(hit.e, "lower")) return kill(hit.e);
     hit = hitTest(occ.filter(e => e.rise > 0.05), vx, vy);
     if (hit && !blocked(hit.e, "sil")) return kill(hit.e);
-    // 2. cars, nearest first: glass soaks rounds until it breaks
-    for (const c of cars.filter(c => c.geo).sort((a, b) => a.z - b.z)) {
+    hit = hitTest(bikes.flatMap(b => b.occ).filter(e => !e.gone && e.bike.geo), vx, vy);
+    if (hit && !blocked(hit.e, "sil") && !inPath(hit.e.bike.geo.body, vx, vy)) return kill(hit.e);
+    // 2. vehicles, nearest first: bikes spark, glass soaks rounds until it breaks
+    for (const c of [...cars.filter(c => c.geo), ...bikes.filter(b => b.geo)].sort((a, b) => a.z - b.z)) {
+      if (c.kind === "bike") { if (inPath(c.geo.body, vx, vy)) return spark(vx, vy); continue; }
       if (!inPath(c.geo.sil, vx, vy) && !c.geo.panes.some(p => inPath(p.path, vx, vy))) continue;
       const pane = c.geo.panes.find(p => inPath(p.path, vx, vy));
       if (pane) {
@@ -456,8 +542,9 @@ const ChaseLevel = (() => {
     e.dying = true; e.hitFlash = 0.1;
     if (e.kind === "blue") { end("fail", "civilian"); return; }
     G.hits++;
-    if (e.seat && e.seat.role === "driver") crash();
-    else say(enemy.occ.filter(o => !o.dying).length === 1 ? "ONLY THE DRIVER LEFT" : "DOWN", 1.2);
+    if (e.seat && e.seat.role === "driver") crashCar(e.car);
+    else if (e.seat && e.seat.role === "rider") crashBike(e.bike);
+    else say(e.car && e.car.occ.filter(o => !o.dying).length === 1 ? "ONLY THE DRIVER LEFT" : "DOWN", 1.2);
   }
   function damagePane(car, pane, vx, vy) {
     const st = car.glass[pane.key];
@@ -469,7 +556,7 @@ const ChaseLevel = (() => {
         const [x, y] = uvTo(pane.pts, Math.random(), Math.random());
         G.shards.push({ x, y, vx: (x - W / 2) * (0.5 + Math.random()) + (Math.random() - 0.5) * 120, vy: -40 - Math.random() * 80, g: 420, age: 0, life: 0.6 + Math.random() * 0.6, s: 0.8 + Math.random() * 2.2, rot: Math.random() * 6 });
       }
-      if (car === enemy && pane.key === "rear") say("REAR GLASS GONE", 1.4);
+      if (car.kind === "enemy" && pane.key === "rear") say("REAR GLASS GONE", 1.4);
     }
   }
   function spark(x, y) {
@@ -503,6 +590,17 @@ const ChaseLevel = (() => {
     drawFigures([...peds.filter(p => !p.gone), ...occ.filter(e => e.rise > 0.05)], t, { mask: mSil, embers: false });
     drawFigures(occ.filter(e => e.lean <= 0.05 && e.rise <= 0.05), t, { mask: mWin, embers: false });
     for (const c of cars) if (c.geo) for (const p of c.geo.panes) drawPane(c, p);
+    // bikes: riders first (hidden only by cars nearer than the nearest bike), then the machines over their legs
+    const live = bikes.filter(b => b.z > 1 && b.z < 150);
+    if (live.length) {
+      const zMin = Math.min(...live.map(b => b.z));
+      mbx.globalCompositeOperation = "source-over"; mbx.fillStyle = "#fff"; mbx.fillRect(0, 0, W, H);
+      mbx.globalCompositeOperation = "destination-out"; for (const c of cars) if (c.geo && c.z < zMin) mbx.fill(c.geo.sil);
+      mbx.globalCompositeOperation = "source-over";
+      drawFigures(live.flatMap(b => b.occ).filter(e => !e.gone), t, { mask: mBike, embers: false });
+    }
+    for (const b of bikes) b.geo = null;
+    for (const b of live.sort((a, c) => c.z - a.z)) drawBike(b);
     drawFigures(occ.filter(e => e.lean > 0.05), t, { mask: mLow });
     effects(t);
     ownCar(t);
@@ -510,10 +608,37 @@ const ChaseLevel = (() => {
     hud(t);
   }
 
+  function drawBike(b) {
+    const g = sctx, P = l => project(...bw(b, ...l)), body = new Path2D();
+    const near = cars.filter(c => c.geo && c.z < b.z);
+    g.save();
+    if (near.length) { const cl = new Path2D(); cl.rect(0, 0, W, H); for (const c of near) cl.addPath(c.geo.sil); g.clip(cl, "evenodd"); }
+    const side = clamp(Math.abs(b.x - cam.offX) / Math.max(1, b.z) * 1.6 + Math.abs(b.yaw), 0.16, 0.95), rot = b.tilt * (b.crashDir || 1);
+    for (const wz of [1.75, 0.35]) {                          // tyres: thin from behind, rounder seen from the side
+      const c = P([0, 0.33, wz]), k = c[2];
+      g.fillStyle = "#030405"; g.beginPath(); g.ellipse(c[0], c[1], 0.33 * k * side, 0.33 * k, rot, 0, 7); g.fill();
+      body.moveTo(c[0] + 0.33 * k * side, c[1]); body.ellipse(c[0], c[1], 0.33 * k * side, 0.33 * k, rot, 0, 7);
+    }
+    const prof = [[0.1, 0.5], [0.25, 0.86], [1.0, 0.9], [1.35, 1.02], [1.55, 0.98], [1.72, 0.52], [1.0, 0.36]];
+    for (const xo of [-0.13, 0.13]) poly(body, prof.map(([z, y]) => P([xo, y, z])).map(q => [q[0], q[1]]));
+    const lit = clamp(1 - b.z / 18, 0, 1);
+    g.fillStyle = `rgb(${8 + lit * 10 | 0},${10 + lit * 11 | 0},${13 + lit * 12 | 0})`; g.fill(body);
+    const seat = [[-0.16, 0.88, 0.3], [0.16, 0.88, 0.3], [0.16, 0.92, 1.0], [-0.16, 0.92, 1.0]].map(P);
+    g.fillStyle = `rgba(30,35,42,${0.9})`; g.beginPath(); g.moveTo(seat[0][0], seat[0][1]); for (const q of seat.slice(1)) g.lineTo(q[0], q[1]); g.fill();
+    const h0 = P([-0.4, 1.14, 1.45]), h1 = P([0.4, 1.14, 1.45]);
+    g.strokeStyle = "#050608"; g.lineWidth = Math.max(1, 0.035 * h0[2]); g.beginPath(); g.moveTo(h0[0], h0[1]); g.lineTo(h1[0], h1[1]); g.stroke();
+    const ex0 = P([0.2, 0.42, 0.15]), ex1 = P([0.2, 0.52, 1.0]);
+    g.strokeStyle = `rgba(140,150,165,${0.25 + lit * 0.2})`; g.lineWidth = Math.max(1, 0.05 * ex0[2]); g.beginPath(); g.moveTo(ex0[0], ex0[1]); g.lineTo(ex1[0], ex1[1]); g.stroke();
+    const tl = P([0, 0.82, 0.05]);
+    g.fillStyle = "rgba(120,45,35,0.6)"; g.fillRect(tl[0] - 0.06 * tl[2], tl[1] - 0.03 * tl[2], 0.12 * tl[2], 0.05 * tl[2]);
+    g.restore();
+    b.geo = { body };
+  }
+
   function effects(t) {
     const g = sctx;
     g.globalCompositeOperation = "lighter";
-    for (const e of enemy.occ) {
+    for (const e of foes.flatMap(f => f.occ)) {
       if (e.dying || !e.geom || !e.geom.muzzle) continue;
       const [mx, my, k] = e.geom.muzzle, glint = e.st === "aim" ? (0.55 + 0.45 * Math.sin(t * 30)) * smooth((TELE - e.tm) / 0.25) : 0, fl = (e.flash || 0) > 0 ? 1 : 0;
       e.flash = Math.max(0, (e.flash || 0) - 1 / 60);
@@ -584,18 +709,21 @@ const ChaseLevel = (() => {
   function hud(t) {
     const k = hudK(), pad = 28 * k, VW = E.VW, VH = E.VH, ink = "200,215,235";
     if (G.phase === "play") crosshair(E.mouse.x * k, E.mouse.y * k, k);
-    glowText("LEVEL 2   THE GETAWAY", pad, pad + 30 * k, 13 * k, ink, 0.6, "left");
+    glowText(`LEVEL 2   THE GETAWAY   ·   WAVE ${G.wave + 1}/${WAVES.length}`, pad, pad + 30 * k, 13 * k, ink, 0.6, "left");
     glowText("CREW", pad, pad + 54 * k, 11 * k, ink, 0.5, "left");
-    enemy.occ.forEach((e, i) => {
+    const focus = foes.filter(f => f.kind === "enemy" && !f.crash).sort((a, b) => a.z - b.z)[0];
+    foes.filter(f => !f.crash).flatMap(f => f.occ).forEach((e, i) => {
       vctx.fillStyle = e.dying ? "rgba(120,60,60,0.45)" : "rgba(255,60,45,0.95)";
       vctx.shadowColor = "rgba(255,40,30,0.9)"; vctx.shadowBlur = e.dying ? 0 : 6 * k;
       vctx.beginPath(); vctx.arc(pad + 54 * k + i * 13 * k, pad + 54 * k, 3.5 * k, 0, 7); vctx.fill();
     });
     vctx.shadowBlur = 0;
-    glowText("REAR GLASS", pad, pad + 76 * k, 11 * k, ink, 0.5, "left");
-    for (let i = 0; i < 4; i++) {
-      vctx.fillStyle = i < enemy.glass.rear.stage ? "rgba(220,230,245,0.85)" : "rgba(220,230,245,0.15)";
-      vctx.fillRect(pad + 90 * k + i * 14 * k, pad + 71 * k, 10 * k, 9 * k);
+    if (focus) {
+      glowText("REAR GLASS", pad, pad + 76 * k, 11 * k, ink, 0.5, "left");
+      for (let i = 0; i < 4; i++) {
+        vctx.fillStyle = i < focus.glass.rear.stage ? "rgba(220,230,245,0.85)" : "rgba(220,230,245,0.15)";
+        vctx.fillRect(pad + 90 * k + i * 14 * k, pad + 71 * k, 10 * k, 9 * k);
+      }
     }
     recDot(t);
     for (let i = 0; i < MAG; i++) {
@@ -615,10 +743,11 @@ const ChaseLevel = (() => {
     showPanel(`
       <p class="eyebrow">Level 2 · Pursuit</p>
       <h2>The Getaway</h2>
-      <p class="lede">The bank crew is running in a black sedan. Five men inside, four of them armed. You're riding shotgun at 80 km/h.</p>
+      <p class="lede">The bank crew is running for it: four cars and a pack of motorbikes, coming at you in waves. You're riding shotgun at 80 km/h.</p>
       <ul class="legend">
         <li><i class="dot red"></i><span><b>The crew</b> lean out of the side windows or stand up through the sunroof to fire. A red glint flashes before each shot. That is your moment.</span></li>
         <li><i class="dot red" style="opacity:.55"></i><span><b>The glass</b> takes four hits: cracks, more cracks, frosted, then it breaks. Through broken rear glass you can reach the driver. Drop him and the car crashes.</span></li>
+        <li><i class="dot red" style="opacity:.8"></i><span><b>Bikes</b> roar up from behind. The man on the back twists round to shoot; drop the rider and the bike goes down.</span></li>
         <li><i class="dot blue"></i><span><b>Other drivers and people on the street.</b> Hitting one ends the chase.</span></li>
       </ul>
       <dl class="keys">${KEYS.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
@@ -629,8 +758,8 @@ const ChaseLevel = (() => {
     if (G.phase === "win") showPanel(`
       <p class="eyebrow">Level 2 · Complete</p>
       <h2 class="ok">The getaway is over</h2>
-      <p class="lede">The sedan is wrapped around a lamp post. Nobody walks away from it.</p>
-      <dl class="stats"><dt>Time</dt><dd>${G.time.toFixed(1)} s</dd><dt>Shots</dt><dd>${G.shots}</dd><dt>Crew hit</dt><dd>${G.hits}</dd><dt>Health</dt><dd>${G.hp}</dd></dl>
+      <p class="lede">Four cars wrapped round lamp posts and a trail of bikes on the tarmac behind you.</p>
+      <dl class="stats"><dt>Time</dt><dd>${G.time.toFixed(1)} s</dd><dt>Shots</dt><dd>${G.shots}</dd><dt>Crew hit</dt><dd>${G.hits}</dd><dt>Stopped</dt><dd>${G.stopped} vehicles</dd><dt>Health</dt><dd>${G.hp}</dd></dl>
       <div class="actions"><button id="p-again" class="primary">Play again</button><button id="p-menu">Menu</button></div>`, endActions());
     else showPanel(`
       <p class="eyebrow">Level 2 · Failed</p>
@@ -643,5 +772,5 @@ const ChaseLevel = (() => {
     "p-menu": () => { hidePanel(); const m = document.getElementById("menu"); if (m) m.hidden = false; init(); },
   });
 
-  return { name: "chase", init, resize, update, render, onDown, onKey, debug: () => ({ G, enemy, cars, peds }) };
+  return { name: "chase", init, resize, update, render, onDown, onKey, debug: () => ({ G, cars, bikes, foes, peds, get enemy() { return foes.find(f => f.kind === "enemy" && !f.crash); } }) };
 })();
