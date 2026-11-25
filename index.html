@@ -118,7 +118,8 @@
   document.getElementById("go-street").onclick = () => play("street");
   document.getElementById("go-archery").onclick = () => play("archery");
   addEventListener("keydown", ev => { if (ev.code === "Escape") menu.hidden = false; });
-  startEngine(canvas, BankLevel);            // bank briefing runs behind the menu
+  document.getElementById("panel").classList.add("archer");
+  startEngine(canvas, ArcheryLevel);         // The Archer briefing runs behind the menu
   const h = location.hash.slice(1); if (LEVELS[h]) play(h);
 </script>
 </body>
