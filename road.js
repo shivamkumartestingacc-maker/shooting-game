@@ -223,8 +223,7 @@ const RoadLevel = (() => {
     shake = Math.max(0, shake - dt * 40); dmgFlash = Math.max(0, dmgFlash - dt); muzzle = Math.max(0, muzzle - dt); helpT -= dt;
     msgT = over ? Math.max(1, msgT - dt) : msgT - dt;
     updateEmbers(dt);
-    for (const e of enemies) if (e.dying) e.dying += dt / 1.4;
-    enemies = enemies.filter(e => e.dying < 1);
+    enemies = enemies.filter(e => !updateDeath(e, dt));
     if (over) return;
     nextSpawn -= dt;
     const alive = enemies.filter(e => !e.dying).length;
@@ -311,7 +310,7 @@ const RoadLevel = (() => {
     const e = hit.e;
     e.hp -= hit.head ? 3 : 1; e.hitFlash = 0.08; e.stagger = 1;
     if (e.state === "walk") e.z += 0.5;
-    if (e.hp <= 0) { e.dying = 1e-4; kills++; if (phase === "solo") nextSpawn = 1.4; }
+    if (e.hp <= 0) { e.dying = true; kills++; if (phase === "solo") nextSpawn = 1.4; }
   }
 
   return { name: "road", init, resize, update, render, onKey, onDown };

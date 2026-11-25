@@ -3,14 +3,14 @@
 // Level 1: City Trust Bank. You are a sniper in a dark window across
 // the street. Six armed men hold seven hostages inside. The first shot
 // is free: after it everyone reacts. Gunmen (red) come to the windows
-// and fire at you; knife men (orange) go for the hostages.
+// and fire at you; knife men (orange) stand over the hostages.
 // Hitting any civilian (blue) fails the mission.
 // =====================================================================
 const BankLevel = (() => {
   const SS = 3;                                 // static layers drawn at 3x so the scope stays sharp
   const FZ = 30;                                // facade plane (m from camera)
   const MAG = 5, BOLT = 0.55, ZMIN = 3, ZMAX = 8;
-  const DMG = 20, TELE = 1.2, LOSE_AT = 2;
+  const DMG = 15, TELE = 1.2;
   const REF_Z = 34;                             // typical target distance, for sway/spread in metres
 
   // openings in the facade (world metres); figures only show through these
@@ -28,7 +28,7 @@ const BankLevel = (() => {
     G = {
       phase: "brief", alert: false, hp: 100, ammo: MAG, bolt: 0, scopeHeld: false, scopeToggle: false,
       zk: 0, zoom: 4.5, breath: 1, winded: 0, swayAmp: 0.16, recoil: 0, shake: 0, dmg: 0, unscopeT: 0,
-      msg: "", msgT: 0, lost: 0, shots: 0, time: 0, endT: 0, reason: "", puffs: [], cracks: [], ownCracks: [], muzzle: 0, helpT: 9,
+      msg: "", msgT: 0, shots: 0, time: 0, endT: 0, reason: "", puffs: [], ownCracks: [], muzzle: 0, helpT: 9,
     };
     const H_POS = [[-9.2, 33.2, 0.3], [-6.4, 35.4, 2.9], [-2.6, 33.0, -0.2], [0.6, 35.2, 3.3], [3.2, 33.4, 0.4], [6.6, 34.2, -2.8], [9.0, 36.0, 0.1]];
     hostages = H_POS.map(([x, z, yaw]) => makeFigure({ kind: "blue", x, z, yaw, homeYaw: yaw, pose: "head", kneel: 1, role: "hostage" }));
@@ -46,6 +46,7 @@ const BankLevel = (() => {
     ];
     const watcher = makeFigure({ kind: "blue", x: 17.2, z: 31.6, y0: 4.4, yaw: 0.25, homeYaw: 0.25, role: "watcher" });
     figs = [...hostages, ...thugs, watcher];
+    showBrief();
   }
 
   function resize() {
@@ -55,7 +56,6 @@ const BankLevel = (() => {
     maskView = mk(W, H); mvctx = maskView.getContext("2d");
     openRects = OPENINGS.map(o => { const [x0, y0] = stage(o.x0, o.y1, o.z), [x1, y1] = stage(o.x1, o.y0, o.z); return [x0, y0, x1, y1]; });
     drawBank(); drawFg();
-    for (const c of G.cracks) drawCrack(...c);
   }
   const isOpen = (sx, sy) => openRects.some(([x0, y0, x1, y1]) => sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1);
 
@@ -210,65 +210,22 @@ const BankLevel = (() => {
       g.strokeStyle = "#0a0d11"; g.lineWidth = w * k; g.beginPath(); g.moveTo(a, b1); g.lineTo(c, d); g.stroke();
       g.strokeStyle = "rgba(150,165,185,0.10)"; g.lineWidth = 0.4; g.beginPath(); g.moveTo(a + w * k * 0.5, b1); g.lineTo(c + w * k * 0.5, d); g.stroke();
     };
+    // windows stand open: only the frames remain
     for (const o of OPENINGS) {
       const [a, c] = P(o.x0, o.y1, o.z), [d, e] = P(o.x1, o.y0, o.z);
-      g.save(); g.beginPath(); g.rect(a, c, d - a, e - c); g.clip();
-      const sh = g.createLinearGradient(a, c, d, e);                        // diagonal glass sheen
-      sh.addColorStop(0, "rgba(170,185,205,0.07)"); sh.addColorStop(0.35, "rgba(170,185,205,0.01)");
-      sh.addColorStop(0.55, "rgba(170,185,205,0.05)"); sh.addColorStop(0.6, "rgba(170,185,205,0.0)"); sh.addColorStop(1, "rgba(170,185,205,0.03)");
-      g.fillStyle = sh; g.fillRect(a, c, d - a, e - c);
-      g.restore();
-      g.strokeStyle = "#0b0e12"; g.lineWidth = 0.12 * k; g.strokeRect(a, c, d - a, e - c);
+      g.strokeStyle = "#0b0e12"; g.lineWidth = 0.14 * k; g.strokeRect(a, c, d - a, e - c);
+      g.strokeStyle = "rgba(150,165,185,0.10)"; g.lineWidth = 0.4; g.strokeRect(a - 0.07 * k, c - 0.07 * k, d - a + 0.14 * k, e - c + 0.14 * k);
     }
-    for (const o of [GROUND[0], GROUND[2]]) {
-      const third = (o.x1 - o.x0) / 3;
-      for (const i of [1, 2]) bar(o.x0 + third * i, o.y0, o.x0 + third * i, o.y1, FZ, 0.09);
-      bar(o.x0, 3.0, o.x1, 3.0, FZ, 0.1);
-    }
-    // centre bay: double doors with side lights
-    bar(-3.5, 2.95, 3.5, 2.95, FZ, 0.12);
-    for (const x of [-1.75, 0, 1.75]) bar(x, 0.35, x, 2.95, FZ, x === 0 ? 0.08 : 0.12);
-    bar(-1.75, 0.35, 1.75, 0.35, FZ, 0.2);
-    for (const x of [-0.18, 0.18]) bar(x, 1.0, x, 1.7, FZ, 0.05);
-    for (const o of UPPER) { const m = (o.x0 + o.x1) / 2; bar(m, o.y0, m, o.y1, FZ, 0.07); bar(o.x0, o.y0 + 1.6, o.x1, o.y0 + 1.6, FZ, 0.07); }
-    const nm = (NEIGHBOR.x0 + NEIGHBOR.x1) / 2;
-    bar(nm, NEIGHBOR.y0, nm, NEIGHBOR.y1, NEIGHBOR.z, 0.07);
     // neighbour's curtain half drawn
     const [ca, cc] = P(NEIGHBOR.x0, NEIGHBOR.y1, NEIGHBOR.z), [cd, ce] = P(NEIGHBOR.x0 + 0.55, NEIGHBOR.y0, NEIGHBOR.z);
     const cg = g.createLinearGradient(ca, 0, cd, 0); cg.addColorStop(0, "#0a0c10"); cg.addColorStop(1, "rgba(10,12,16,0.75)");
     g.fillStyle = cg; g.fillRect(ca, cc, cd - ca, ce - cc);
-    // bank name on the door glass
-    const [tx, ty] = P(0, 2.2, FZ), fs = 0.16 * k;
-    g.font = `${fs}px Georgia, serif`; g.textAlign = "center"; g.fillStyle = "rgba(170,185,205,0.12)";
-    g.fillText("CITY TRUST", tx, ty);
-  }
-
-  function drawCrack(sx, sy, seed) {
-    const g = fgx, r = mulberry(seed), R = 0.2 * cam.f / FZ;
-    g.save(); g.setTransform(SS, 0, 0, SS, 0, 0);
-    const wash = g.createRadialGradient(sx, sy, 0, sx, sy, R * 0.6);
-    wash.addColorStop(0, "rgba(200,210,225,0.12)"); wash.addColorStop(1, "rgba(200,210,225,0)");
-    g.fillStyle = wash; g.fillRect(sx - R, sy - R, R * 2, R * 2);
-    g.strokeStyle = "rgba(200,212,230,0.4)"; g.lineWidth = 0.22; g.lineCap = "round";
-    const n = 9 + (r() * 5 | 0), rays = [];
-    for (let i = 0; i < n; i++) {
-      let a = (i / n) * Math.PI * 2 + r() * 0.4, x = sx, y = sy;
-      const L = R * (0.4 + r() * 0.8); g.beginPath(); g.moveTo(x, y);
-      for (let s = 0; s < 3; s++) { a += (r() - 0.5) * 0.5; x += Math.cos(a) * L / 3; y += Math.sin(a) * L / 3; g.lineTo(x, y); }
-      g.stroke(); rays.push(a);
-    }
-    for (const rr of [0.28, 0.55]) for (let i = 0; i < n; i++) if (r() < 0.6) {
-      g.beginPath(); g.arc(sx, sy, R * rr * (0.85 + r() * 0.3), (i / n) * Math.PI * 2, ((i + 1) / n) * Math.PI * 2); g.stroke();
-    }
-    g.fillStyle = "#050608"; g.beginPath(); g.arc(sx, sy, R * 0.05, 0, 7); g.fill();
-    g.strokeStyle = "rgba(220,230,245,0.55)"; g.beginPath(); g.arc(sx, sy, R * 0.065, 0, 7); g.stroke();
-    g.restore();
   }
 
   // ------------------------------------------------------------------ helpers
   const alive = list => list.filter(e => !e.dying);
   function say(m, d = 2.5) { G.msg = m; G.msgT = d; }
-  function end(phase, reason) { if (G.phase !== "play") return; G.phase = phase; G.reason = reason; G.endT = 0; G.scopeToggle = false; }
+  function end(phase, reason) { if (G.phase !== "play") return; G.phase = phase; G.reason = reason; G.endT = 0; G.scopeToggle = false; G.scopeHeld = false; setTimeout(showEnd, 1400); }
   const pxPerM = () => cam.f / REF_Z;
   function sway(t) {
     const a = G.swayAmp;
@@ -334,19 +291,15 @@ const BankLevel = (() => {
         e.target = free.sort((a, b) => Math.hypot(a.x - e.x, a.z - e.z) - Math.hypot(b.x - e.x, b.z - e.z))[0];
       }
       const h = e.target, s = Math.sign(e.x - h.x) || 1;
-      if (walkTo(e, h.x + s * 0.55, h.z - 0.3, dt)) { e.state = "threat"; e.tm = 4; }
+      if (walkTo(e, h.x + s * 0.55, h.z - 0.3, dt)) e.state = "threat";
       return;
     }
     if (e.state === "threat") {
       const h = e.target;
       idle(e, dt); turnTo(e, yawToward(e, h.x, h.z), dt, 6); e.pose = "raise";
       e.tremble = 0.6;
-      if (h.dying) { e.state = "hunt"; e.target = null; return; }
-      if ((e.tm -= dt) <= 0) {
-        h.dying = 1e-4; G.lost++; sfx.thud(); e.pose = "knife"; e.tremble = 0;
-        e.state = "hunt"; e.target = null; e.pauseT = 1.2;
-        if (G.lost >= LOSE_AT) end("fail", "TOO MANY HOSTAGES LOST"); else say("HOSTAGE KILLED");
-      }
+      if (h.dying) { e.state = "hunt"; e.target = null; }
+      // he only menaces: the hostages are scared, not harmed
     }
   }
 
@@ -385,13 +338,13 @@ const BankLevel = (() => {
     const hw = W / (2 * cam.zoom), hh = H / (2 * cam.zoom);
     cam.fx = clamp(lerp(W / 2, ax, G.zk), hw, W - hw); cam.fy = clamp(lerp(H / 2, ay, G.zk), hh, H - hh);
 
-    for (const f of figs) { animate(f, dt); if (f.dying) f.dying += dt / 1.4; f.flash = Math.max(0, (f.flash || 0) - dt); }
+    for (const f of figs) { animate(f, dt); if (updateDeath(f, dt)) f.gone = true; f.flash = Math.max(0, (f.flash || 0) - dt); }
     for (const h of hostages) updateHostage(h, dt, t);
     for (const e of thugs) updateThug(e, dt, t);
     const w = figs.find(f => f.role === "watcher");
     if (w && !w.dying) turnTo(w, w.homeYaw + Math.sin(t * 0.3) * 0.5, dt, 1);
     if (G.phase === "play" && thugs.every(e => e.dying)) { G.phase = "clearing"; G.endT = 0; }
-    if (G.phase === "clearing" && (G.endT += dt) > 1.2) { G.phase = "win"; G.endT = 0; G.scopeToggle = false; }
+    if (G.phase === "clearing" && (G.endT += dt) > 2.6) { G.phase = "win"; G.endT = 0; G.scopeToggle = false; showEnd(); }
   }
 
   // ------------------------------------------------------------------ input
@@ -410,12 +363,10 @@ const BankLevel = (() => {
     if (!G.alert) { G.alert = true; for (const e of thugs) e.react = 1.2 + Math.random() * 2.2; }
     const [sx, sy] = toStage(vx, vy);
     if (!isOpen(sx, sy)) { puff(sx, sy); return; }
-    const seed = (Math.random() * 1e9) | 0;
-    G.cracks.push([sx, sy, seed]); drawCrack(sx, sy, seed); sfx.glass();
-    const hit = hitTest(figs.filter(f => !(f.dying >= 1)), vx, vy);
+    const hit = hitTest(figs.filter(f => !f.gone), vx, vy);
     if (!hit) return;
     const e = hit.e;
-    e.dying = 1e-4; e.hitFlash = 0.1; e.stagger = 1;
+    e.dying = true; e.hitFlash = 0.1; e.fallSide = Math.sign(e.x - (cam.cx - W / 2)) || 1;
     if (e.kind === "blue") { end("fail", "YOU SHOT A CIVILIAN"); return; }
     say(hit.head ? "HEADSHOT" : "TARGET DOWN", 1.2);
   }
@@ -426,8 +377,6 @@ const BankLevel = (() => {
   function onDown(button) {
     if (button === 2) { G.scopeHeld = true; return; }
     if (button !== 0) return;
-    if (G.phase === "brief") { G.phase = "play"; return; }
-    if (G.phase === "win" || G.phase === "fail") { if (G.endT > 1.2) { init(); G.phase = "play"; } return; }
     if (G.phase === "play") shoot(performance.now() / 1000);
   }
   function onUp(button) { if (button === 2) G.scopeHeld = false; }
@@ -444,7 +393,7 @@ const BankLevel = (() => {
     sctx.drawImage(bgHi, sx, sy, sw, sh, 0, 0, W, H);
     mvctx.clearRect(0, 0, W, H); mvctx.fillStyle = "#fff";
     for (const [x0, y0, x1, y1] of openRects) { const [a, b] = toView(x0, y0), [c, d] = toView(x1, y1); mvctx.fillRect(a, b, c - a, d - b); }
-    drawFigures(figs.filter(f => !(f.dying >= 1)), t, { mask: maskView });
+    drawFigures(figs.filter(f => !f.gone), t, { mask: maskView });
     sctx.drawImage(fgHi, sx, sy, sw, sh, 0, 0, W, H);
     effects(t);
     ownWindow(t);
@@ -531,6 +480,41 @@ const BankLevel = (() => {
     sctx.restore();
   }
 
+  // ------------------------------------------------------------------ panels (HTML, crisp)
+  const KEYS = [["Right mouse", "Hold to scope"], ["Left click", "Fire"], ["Wheel", "Zoom 3× – 8×"], ["Shift", "Hold breath"], ["Space", "Reload"], ["Esc", "Menu"]];
+  function showBrief() {
+    showPanel(`
+      <p class="eyebrow">Level 1 · Sniper</p>
+      <h2>City Trust Bank</h2>
+      <p class="lede">Six armed men are holding seven hostages. You are in a dark room across the street, rifle on the sill.</p>
+      <ul class="legend">
+        <li><i class="dot red"></i><span><b>Gunmen</b> come to the windows and shoot back. A red glint flashes before each shot.</span></li>
+        <li><i class="dot orange"></i><span><b>Knife men</b> stand over the hostages.</span></li>
+        <li><i class="dot blue"></i><span><b>Hostages and neighbours.</b> Hitting one ends the mission.</span></li>
+      </ul>
+      <p class="note">Your first shot is free. After it, everyone reacts.</p>
+      <dl class="keys">${KEYS.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
+      <div class="actions"><button id="p-go" class="primary">Begin mission</button></div>`,
+      { "p-go": () => { hidePanel(); G.phase = "play"; } });
+  }
+  function showEnd() {
+    if (G.phase === "win") showPanel(`
+      <p class="eyebrow">Level 1 · Complete</p>
+      <h2 class="ok">Bank clear</h2>
+      <p class="lede">All ${hostages.filter(h => !h.dying).length} hostages walk out.</p>
+      <dl class="stats"><dt>Time</dt><dd>${G.time.toFixed(1)} s</dd><dt>Shots</dt><dd>${G.shots}</dd><dt>Accuracy</dt><dd>${Math.round(thugs.length / Math.max(1, G.shots) * 100)}%</dd><dt>Health</dt><dd>${G.hp}</dd></dl>
+      <div class="actions"><button id="p-again" class="primary">Play again</button><button id="p-menu">Menu</button></div>`, endActions());
+    else showPanel(`
+      <p class="eyebrow">Level 1 · Failed</p>
+      <h2 class="bad">Mission failed</h2>
+      <p class="lede">${G.reason === "YOU SHOT A CIVILIAN" ? "You hit a civilian." : "You were shot."}</p>
+      <div class="actions"><button id="p-again" class="primary">Try again</button><button id="p-menu">Menu</button></div>`, endActions());
+  }
+  const endActions = () => ({
+    "p-again": () => { hidePanel(); init(); hidePanel(); G.phase = "play"; },
+    "p-menu": () => { hidePanel(); const m = document.getElementById("menu"); if (m) m.hidden = false; init(); },
+  });
+
   // ------------------------------------------------------------------ HUD
   function hud(t) {
     const k = hudK(), pad = 28 * k, VW = E.VW, VH = E.VH;
@@ -559,47 +543,10 @@ const BankLevel = (() => {
     vctx.fillStyle = G.hp > 30 ? "rgba(190,215,240,0.75)" : "rgba(255,60,50,0.9)";
     vctx.fillRect(pad, VH - pad - 6 * k, 180 * k * G.hp / 100, 6 * k);
 
-    if (G.phase === "play" && thugs.some(e => !e.dying && e.state === "threat"))
-      glowText("HOSTAGE UNDER THE KNIFE", VW / 2, VH * 0.12, 16 * k, "255,150,90", 0.5 + 0.5 * Math.sin(t * 10));
     if (G.msgT > 0) glowText(G.msg, VW / 2, VH * 0.2, 22 * k, ink, Math.min(1, G.msgT) * 0.9);
     if (G.phase === "play" && G.helpT > 0)
-      glowText("RIGHT-HOLD SCOPE   WHEEL ZOOM   SHIFT HOLD BREATH   CLICK FIRE   SPACE RELOAD", VW / 2, VH - pad - 3 * k, 11 * k, ink, Math.min(1, G.helpT) * 0.55);
+      glowText("RIGHT-HOLD SCOPE  ·  CLICK FIRE  ·  SHIFT BREATH  ·  SPACE RELOAD", VW / 2, VH - pad - 3 * k, 13 * k, ink, Math.min(1, G.helpT) * 0.7);
 
-    if (G.phase === "brief") panel(k, [
-      ["LEVEL 1", 13, "255,150,90", 0.8],
-      ["CITY TRUST BANK", 30, ink, 0.95],
-      ["", 10],
-      ["Six armed men are holding seven hostages.", 14, ink, 0.75],
-      ["You are in a dark room across the street.", 14, ink, 0.75],
-      ["Your first shot is free. After it, they all react:", 14, ink, 0.75],
-      ["red gunmen come to the windows and fire at you,", 14, "255,120,100", 0.8],
-      ["orange knife men go for the hostages.", 14, "255,170,110", 0.8],
-      ["Never hit a blue figure.", 14, "120,190,255", 0.9],
-      ["", 10],
-      ["RIGHT-HOLD scope    WHEEL zoom    SHIFT hold breath    SPACE reload", 12, ink, 0.6],
-      ["", 6],
-      ["CLICK TO BEGIN", 15, ink, 0.6 + 0.4 * Math.sin(t * 3)],
-    ]);
-    if (G.phase === "win") panel(k, [
-      ["BANK CLEAR", 32, "120,190,255", 0.95],
-      [`${hostages.filter(h => !h.dying).length} of ${hostages.length} hostages walk out`, 15, ink, 0.8],
-      [`time ${G.time.toFixed(1)}s    shots ${G.shots}    hits ${thugs.length}`, 13, ink, 0.6],
-      ["", 8],
-      [G.endT > 1.2 ? "CLICK TO REPLAY    ESC MENU" : "", 13, ink, 0.6],
-    ]);
-    if (G.phase === "fail") panel(k, [
-      ["MISSION FAILED", 32, "255,70,60", 0.95],
-      [G.reason, 16, ink, 0.85],
-      ["", 8],
-      [G.endT > 1.2 ? "CLICK TO RETRY    ESC MENU" : "", 13, ink, 0.6],
-    ]);
-  }
-
-  function panel(k, lines) {
-    const VW = E.VW, VH = E.VH, total = lines.reduce((s, l) => s + l[1] * 1.7, 0) * k;
-    vctx.fillStyle = "rgba(4,5,7,0.62)"; vctx.fillRect(0, VH / 2 - total / 2 - 30 * k, VW, total + 60 * k);
-    let y = VH / 2 - total / 2;
-    for (const [txt, size, rgb, a] of lines) { y += size * 0.85 * k; if (txt) glowText(txt, VW / 2, y, size * k, rgb, a); y += size * 0.85 * k; }
   }
 
   function reticle(t, k) {

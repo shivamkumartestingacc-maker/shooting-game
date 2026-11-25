@@ -182,9 +182,31 @@ function skeleton(e, t) {
     }
     return { side, sh, elbow, hand, up: Math.min(1, e.upCur + gp) };
   });
-  return { pelvis, shC, head, legs, arms };
+  const sk = { pelvis, shC, head, legs, arms };
+  if (e.fall) {                                      // topple sideways around the knees
+    const a = e.fall * e.fallSide, c = Math.cos(a), sn = Math.sin(a), py0 = 0.12;
+    const R = j => { const x = j[0], y = j[1] - py0; j[0] = x * c + y * sn; j[1] = py0 - x * sn + y * c; };
+    [pelvis, shC, head].forEach(R);
+    for (const L of legs) [L.hip, L.knee, L.foot].forEach(R);
+    for (const A of arms) [A.sh, A.elbow, A.hand].forEach(R);
+  }
+  return sk;
 }
 const CAM_FACE_Y = 1.5;
+
+// death: legs give way, body topples to the floor, lies still, then burns away into embers.
+// Levels set e.dying = true on the kill and drop the figure once updateDeath returns true.
+const FALL_T = 0.75, LIE_T = 0.5, BURN_T = 1.7;
+function updateDeath(e, dt) {
+  if (!e.dying) return false;
+  if (!e.deathT) { e.deathT = 0; e.fallSide = e.fallSide || (Math.random() < 0.5 ? -1 : 1); e.pose = "hang"; e.kneel = 1; e.walkW = 0; e.grab = 0; e.tremble = 0; }
+  e.deathT += dt;
+  e.kneelCur = ease(e.kneelCur, 1, 9, dt);
+  const k = clamp((e.deathT - 0.18) / (FALL_T - 0.18), 0, 1);
+  e.fall = k * k * 1.42 + (k >= 1 ? Math.sin((e.deathT - FALL_T) * 18) * 0.04 * Math.max(0, 1 - (e.deathT - FALL_T) * 4) : 0);  // gravity, small bounce
+  e.dissolve = clamp((e.deathT - FALL_T - LIE_T) / BURN_T, 0, 1);
+  return e.dissolve >= 1;
+}
 
 // path helpers: every sub-shape wound the same way so one nonzero fill unions them
 function poly(path, pts) {
@@ -220,16 +242,19 @@ function buildBody(e, t) {
     return [x, y, k];
   };
   const path = new Path2D(), bw = e.style.build, wf = Math.abs(cy) + 0.65 * Math.abs(sy);  // torso reads narrower in profile
-  const T = (u, wd, side) => { const c = P(lerp3(sk.pelvis, sk.shC, u)); return [c[0] + side * wd * bw * wf * c[2], c[1], c[2]]; };
+  // torso widths are laid perpendicular to the spine on screen, so a fallen body keeps its shape
+  const sp0 = P(sk.pelvis, 0), sp1 = P(sk.shC, 0), sl = Math.hypot(sp1[0] - sp0[0], sp1[1] - sp0[1]) || 1;
+  const nx = -(sp1[1] - sp0[1]) / sl, ny = (sp1[0] - sp0[0]) / sl, spine = Math.atan2(nx, -ny) - Math.PI / 2;
+  const T = (u, wd, side) => { const c = P(lerp3(sk.pelvis, sk.shC, u)), o = side * wd * bw * wf * c[2]; return [c[0] - nx * o, c[1] - ny * o, c[2]]; };
   smoothPoly(path, [...TORSO.map(([u, wd]) => T(u, wd, 1)), T(-0.12, 0, 1), ...TORSO.slice().reverse().map(([u, wd]) => T(u, wd, -1))]);
   const neckBase = P([sk.shC[0], sk.shC[1] + 0.04, sk.shC[2]]), hd = P(sk.head);
   const chin = P([sk.head[0], sk.head[1] - 0.08, sk.head[2]]);
   capsule(path, neckBase, chin, 0.05 * neckBase[2], 0.045 * chin[2]);
   path.moveTo(hd[0] + 0.082 * hd[2], hd[1]);
-  path.ellipse(hd[0], hd[1], 0.082 * hd[2], 0.105 * hd[2], e.style.tilt * 0.3, 0, Math.PI * 2);
+  path.ellipse(hd[0], hd[1], 0.082 * hd[2], 0.105 * hd[2], e.style.tilt * 0.3 + spine, 0, Math.PI * 2);
   const hair = P([sk.head[0], sk.head[1] + 0.045, sk.head[2] + 0.015]);
   path.moveTo(hair[0] + 0.088 * hair[2], hair[1]);
-  path.ellipse(hair[0], hair[1], 0.088 * hair[2], 0.07 * hair[2], e.style.tilt * 0.3, 0, Math.PI * 2);
+  path.ellipse(hair[0], hair[1], 0.088 * hair[2], 0.07 * hair[2], e.style.tilt * 0.3 + spine, 0, Math.PI * 2);
   for (const L of sk.legs) {
     const h = P(L.hip), k = P(L.knee), calf = P(lerp3(L.knee, L.foot, 0.3)), a = P(L.foot);
     const toe = P([L.foot[0], L.foot[1] - 0.03, L.foot[2] + L.toeD]);
@@ -303,7 +328,7 @@ function buildWeapon(e, sk, hands, P, geom) {
 
 // ---------- embers: fire-like particles off dissolving bodies ----------
 function emitEmbers(e) {
-  const g = e.geom, [x0, y0, x1, y1] = g.box, line = lerp(y1, y0 - g.kb * 0.15, e.dying);
+  const g = e.geom, [x0, y0, x1, y1] = g.box, line = dyingLine(e, g);
   const sc = clamp(g.kb / 140, 0.7, 2.6);
   for (let tries = 0, made = 0; tries < 90 && made < 22; tries++) {
     const x = lerp(x0, x1, Math.random()), y = line + Math.random() * g.kb * 0.06;
@@ -325,7 +350,7 @@ function updateEmbers(dt) {
   }
   E.embers = E.embers.filter(p => p.age < p.life);
 }
-const dyingLine = (e, g) => lerp(g.feetY, g.box[1] - g.kb * 0.15, e.dying);
+const dyingLine = (e, g) => lerp(g.box[3] + 2, g.box[1] - g.kb * 0.1, e.dissolve);
 
 // ---------- figure renderer: silhouettes -> blur chain -> additive glow ----------
 // opts.mask: canvas (view size) of where figures may show (window openings). opts.reflect: wet-floor mirror.
@@ -335,13 +360,14 @@ function drawFigures(list, t, opts = {}) {
   hctx.clearRect(0, 0, half.width, half.height);
   for (const e of [...list].sort((a, b) => b.z - a.z)) {
     const g = e.geom = buildBody(e, t), c = COL[e.kind];
-    const a = Math.min(1, e.alpha) * (0.82 + 0.18 * hash(e.id, 999, Math.floor(t * 20))) * (e.dying ? 1 - e.dying * 0.3 : 1);
+    const burning = e.dissolve > 0;
+    const a = Math.min(1, e.alpha) * (0.82 + 0.18 * hash(e.id, 999, Math.floor(t * 20))) * (burning ? 1 - e.dissolve * 0.3 : 1);
     fctx.save();
-    if (e.dying) { fctx.beginPath(); fctx.rect(0, 0, W, dyingLine(e, g)); fctx.clip(); emitEmbers(e); }
+    if (burning) { fctx.beginPath(); fctx.rect(0, 0, W, dyingLine(e, g)); fctx.clip(); emitEmbers(e); }
     fctx.fillStyle = e.hitFlash > 0 ? `rgba(255,255,255,${a})` : `rgba(${c.aura},${a})`;
     fctx.fill(g.path);
     fctx.restore();
-    if (e.dying) {                                        // white-hot burning edge
+    if (burning) {                                        // white-hot burning edge
       const line = dyingLine(e, g);
       fctx.save(); fctx.clip(g.path);
       fctx.fillStyle = `rgba(${c.core},0.95)`; fctx.fillRect(0, line - g.kb * 0.025, W, g.kb * 0.04);
@@ -356,11 +382,11 @@ function drawFigures(list, t, opts = {}) {
     if (opts.reflect) {
       hctx.save(); hctx.scale(half.width / W, half.height / H);
       hctx.translate(0, g.feetY); hctx.scale(1, -0.6); hctx.translate(0, -g.feetY);
-      hctx.globalAlpha = 0.28 * a * (e.dying ? 1 - e.dying : 1); hctx.fillStyle = `rgba(${c.aura},1)`; hctx.fill(g.path);
+      hctx.globalAlpha = 0.28 * a * (burning ? 1 - e.dissolve : 1); hctx.fillStyle = `rgba(${c.aura},1)`; hctx.fill(g.path);
       hctx.restore();
     }
     if (g.weapon) {
-      wpctx.globalAlpha = e.dying ? Math.max(0, 1 - e.dying * 2.5) : 1;
+      wpctx.globalAlpha = e.dying ? Math.max(0, 1 - (e.deathT || 0) * 2.5) : 1;   // weapon drops away as he falls
       wpctx.fillStyle = "rgba(6,7,9,0.97)"; wpctx.fill(g.weapon);
       wpctx.strokeStyle = `rgba(${c.aura},0.3)`; wpctx.lineWidth = 0.8; wpctx.stroke(g.weapon);
       wpctx.globalAlpha = 1;
@@ -420,9 +446,9 @@ const hudK = () => E.VW / innerWidth;
 function glowText(txt, x, y, size, rgb, a, align) {
   vctx.font = `${size}px ui-monospace, Menlo, Consolas, monospace`;
   vctx.textAlign = align || "center"; vctx.textBaseline = "middle";
-  vctx.shadowColor = `rgba(${rgb},${a})`; vctx.shadowBlur = size * 0.8;
-  vctx.fillStyle = `rgba(${rgb},${a})`; vctx.fillText(txt, x, y);
-  vctx.shadowBlur = 0;
+  vctx.shadowColor = `rgba(${rgb},${a * 0.8})`; vctx.shadowBlur = size * 0.6;
+  vctx.fillStyle = `rgba(${rgb},${a * 0.5})`; vctx.fillText(txt, x, y);
+  vctx.shadowBlur = 0; vctx.fillStyle = `rgba(${rgb},${a})`; vctx.fillText(txt, x, y);
 }
 function pinDot(mx, my, k) {
   vctx.fillStyle = "rgba(0,0,0,0.85)"; vctx.beginPath(); vctx.arc(mx, my, 2.6 * k, 0, 7); vctx.fill();
@@ -504,4 +530,13 @@ function startEngine(canvas, level) {
   setLevel(level);
   requestAnimationFrame(ts => { lastTs = ts; frame(ts); });
 }
-function setLevel(level) { E.level = level; E.embers.length = 0; level.init(); engineResize(); }
+function setLevel(level) { hidePanel(); E.level = level; E.embers.length = 0; level.init(); engineResize(); }
+
+// HTML panel for briefings and end screens: crisp text, real buttons
+function showPanel(html, actions = {}) {
+  const p = document.getElementById("panel"); if (!p) return;
+  p.innerHTML = html; p.hidden = false;
+  for (const [id, fn] of Object.entries(actions)) { const b = p.querySelector("#" + id); if (b) b.onclick = fn; }
+  const first = p.querySelector("button"); if (first) first.focus({ preventScroll: true });
+}
+function hidePanel() { const p = document.getElementById("panel"); if (p) { p.hidden = true; p.innerHTML = ""; } }

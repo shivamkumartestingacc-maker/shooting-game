@@ -4,13 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Hold The Road</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
   :root { --bg: #0b0d10; --ink: #c8d7eb; --dim: rgba(200,215,235,0.45); --orange: #ff7a2a; --blue: #5aaaff; }
   html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
   canvas { display: block; width: 100vw; height: 100vh; cursor: none; touch-action: none; }
   #menu {
     position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px;
-    background: radial-gradient(ellipse at 50% 60%, rgba(30,36,44,0.55), rgba(5,6,8,0.92));
+    background: radial-gradient(ellipse at 50% 60%, rgba(18,22,28,0.94), rgba(5,6,8,0.98)); z-index: 20;
     font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--ink); text-align: center;
     padding-inline: max(16px, env(safe-area-inset-left, 0px));
   }
@@ -25,10 +27,45 @@
   #menu button:hover, #menu button:focus-visible { border-color: var(--orange); box-shadow: 0 0 18px rgba(255,122,42,0.35); outline: none; }
   #menu button.l1:hover, #menu button.l1:focus-visible { border-color: var(--blue); box-shadow: 0 0 18px rgba(90,170,255,0.35); }
   #menu[hidden] { display: none; }
+
+  /* briefing / result card */
+  #panel {
+    position: fixed; z-index: 10; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: min(540px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; box-sizing: border-box;
+    padding: 28px 32px 26px; background: rgba(7,9,12,0.94); border: 1px solid rgba(200,215,235,0.14);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.6); color: var(--ink); cursor: default;
+    font: 15px/1.55 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  #panel[hidden] { display: none; }
+  #panel .eyebrow { margin: 0 0 6px; font: 500 12px/1 "JetBrains Mono", ui-monospace, monospace; letter-spacing: 0.22em; text-transform: uppercase; color: #ffad7a; }
+  #panel h2 { margin: 0 0 12px; font: 600 32px/1.1 "Space Grotesk", Inter, system-ui, sans-serif; letter-spacing: 0.01em; color: #eef3fa; text-wrap: balance; }
+  #panel h2.ok { color: #9fd0ff; text-shadow: 0 0 22px rgba(90,170,255,0.45); }
+  #panel h2.bad { color: #ff8a7a; text-shadow: 0 0 22px rgba(255,60,40,0.45); }
+  #panel .lede { margin: 0 0 18px; color: #c3cfdd; }
+  #panel .legend { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 10px; }
+  #panel .legend li { display: grid; grid-template-columns: 14px 1fr; gap: 12px; align-items: baseline; color: #b7c3d2; }
+  #panel .legend b { color: #eef3fa; font-weight: 600; }
+  #panel .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; transform: translateY(1px); }
+  #panel .dot.red { background: #ff3a2a; box-shadow: 0 0 10px #ff3a2a; }
+  #panel .dot.orange { background: #ff7a20; box-shadow: 0 0 10px #ff7a20; }
+  #panel .dot.blue { background: #4aa0ff; box-shadow: 0 0 10px #4aa0ff; }
+  #panel .note { margin: 0 0 18px; padding: 10px 12px; border-left: 2px solid #ffad7a; background: rgba(255,173,122,0.06); color: #e6d6c8; }
+  #panel dl { margin: 0 0 22px; display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; align-items: center; }
+  #panel .keys dt { font: 500 12px/1 "JetBrains Mono", ui-monospace, monospace; padding: 6px 8px; border: 1px solid rgba(200,215,235,0.22); border-bottom-width: 2px; border-radius: 4px; color: #e8eef6; text-align: center; }
+  #panel .keys dd, #panel .stats dd { margin: 0; color: #b7c3d2; }
+  #panel .stats dt { font: 500 12px/1 "JetBrains Mono", ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(200,215,235,0.55); }
+  #panel .stats dd { font: 500 18px/1 "JetBrains Mono", ui-monospace, monospace; color: #eef3fa; font-variant-numeric: tabular-nums; }
+  #panel .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+  #panel button { font: 600 14px/1 Inter, system-ui, sans-serif; letter-spacing: 0.04em; padding: 13px 20px; color: #dfe7f1; background: transparent; border: 1px solid rgba(200,215,235,0.25); cursor: pointer; }
+  #panel button.primary { color: #1a0d05; background: #ff9a5a; border-color: #ff9a5a; box-shadow: 0 0 22px rgba(255,122,42,0.35); }
+  #panel button:hover { filter: brightness(1.12); }
+  #panel button:focus-visible { outline: 2px solid #9fd0ff; outline-offset: 2px; }
+  @media (max-width: 480px) { #panel { padding: 22px 18px; } #panel h2 { font-size: 26px; } }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+<div id="panel" hidden></div>
 <div id="menu">
   <h1>HOLD THE ROAD</h1>
   <p>NIGHT CAMERA &nbsp;·&nbsp; ESC RETURNS HERE</p>
