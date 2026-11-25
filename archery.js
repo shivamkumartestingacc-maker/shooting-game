@@ -13,7 +13,7 @@
 // =====================================================================
 const ArcheryLevel = (() => {
   const K = WildKit, S = K.S;
-  const GRAV = 7, VMIN = 13, VMAX = 66, FIRE_POWER = 0.9, NOCK = 0.4, MAXQ = 24;   // one click looses at FIRE_POWER, NOCK s between shots
+  const GRAV = 7, VMIN = 13, VMAX = 66, NOCK = 0.55, MAXQ = 24;   // one click looses at FIRE_POWER, NOCK s between shots
   const WALK = 2.8, EYE = 1.62, CROUCH = 1.2, TELE = 1.0, END_D = 546;
   const PIXEL = { cell: 4, levels: 9, dots: 0.26, grain: 12, sat: 1.45, contrast: 1.3, lift: 6 };
 
@@ -89,7 +89,7 @@ const ArcheryLevel = (() => {
     G = { phase: "brief", act, hp: 100, food: 100, quiver: ACTS[act].quiver, nock: 0, zk: 0, zoomHeld: false,
       shake: 0, dmg: 0, msg: "", msgT: 0, big: "", bigT: 0, time: 0, shots: 0, hits: 0, kills: 0, food0: 0, endT: 0, reason: "",
       stop: -1, speed: 0, clearT: 0, fighting: false, alert: false, alarm: act === 4, scroll: act === 4, skip: false, bob: 0, helpT: 9,
-      sparks: [], dust: [], bodies: [], camH: EYE, release: 0, crackT: 0, reinf: false, losT: 0, ate: new Set(), actShown: act - 1 };
+      sparks: [], dust: [], tracers: [], bodies: [], camH: EYE, release: 0, crackT: 0, reinf: false, losT: 0, ate: new Set(), actShown: act - 1 };
     figs = []; arrows = []; stuck = []; foeArrows = [];
     SCROLL.here = act < 4;
     K.build({ zones: ZONES, specials: SPECIALS }, 7);
@@ -433,14 +433,32 @@ const ArcheryLevel = (() => {
   }
 
   // ---------------------------------------------------------------- your arrows
+  // crossbow: the bolt goes exactly where the crosshair points, instantly (a ray, no drop)
   function loosePlayer(t) {
-    const k = FIRE_POWER;
     if (G.quiver <= 0 || G.phase !== "play") return;
-    G.quiver--; G.shots++; G.nock = NOCK; G.release = 0.18; sfx.twang(k);
+    G.quiver--; G.shots++; G.nock = NOCK; G.release = 0.18; sfx.twang(1.3); setTimeout(() => sfx.reload(), NOCK * 900);
     const [ax, ay] = aimPoint(t), [sx, sy] = toStage(ax, ay);
-    const d = norm3([(sx - cam.cx) / cam.f, (cam.hor - sy) / cam.f, 1]), v = lerp(VMIN, VMAX, Math.pow(k, 1.3));
-    const p = [cam.offX + d[0] * 0.5, cam.camH - 0.04 + d[1] * 0.5, S.D + d[2] * 0.5];
-    arrows.push({ p, v: [d[0] * v, d[1] * v, d[2] * v], trail: [], age: 0, power: k });
+    const d = norm3([(sx - cam.cx) / cam.f, (cam.hor - sy) / cam.f, 1]), o = [cam.offX, cam.camH, S.D];
+    const bolt = { v: [d[0] * 80, d[1] * 80, d[2] * 80] };
+    const hit = hitTest(figs.filter(f => !f.gone && f.z > 0.8), ax, ay);
+    const tMax = hit ? hit.e.z / d[2] : 160;
+    let end = null, prev = o, onGround = false;
+    for (let tt = 0.5; tt <= tMax; tt += 0.4) {           // scenery in front of the target stops the bolt
+      const p = [o[0] + d[0] * tt, o[1] + d[1] * tt, o[2] + d[2] * tt];
+      if (p[1] <= 0.02) { end = [p[0], 0.02, p[2]]; onGround = true; break; }
+      if (K.hitScene(prev, p)) { end = p; break; }
+      prev = p;
+    }
+    const at = q => G.tracers.push({ to: q, age: 0 });
+    if (!end && hit) {
+      const f = hit.e, q = [o[0] + d[0] * tMax, o[1] + d[1] * tMax, o[2] + d[2] * tMax], g = f.geom;
+      at(q);
+      if (g.shield && !hit.head && sctx.isPointInPath(g.shield, ax, ay)) { stick(bolt, q, f, false); sfx.thunk(); spark(ax, ay); return; }
+      stick(bolt, q, f, true); hitFig(f, hit.head, bolt); return;
+    }
+    if (!end) end = [o[0] + d[0] * tMax, o[1] + d[1] * tMax, o[2] + d[2] * tMax];
+    at(end);
+    if (end[2] - S.D < 150) { stick(bolt, end, null, onGround || end[1] < 2.6); noiseAt(end, 0.3); sfx.thunk(); dustAt(end); }
   }
   function flyArrows(dt) {
     for (const a of arrows) {
@@ -680,6 +698,13 @@ const ArcheryLevel = (() => {
       g.beginPath(); g.moveTo(mx - r * 1.8, my); g.lineTo(mx + r * 1.8, my); g.moveTo(mx, my - r * 1.2); g.lineTo(mx, my + r * 1.2); g.stroke();
     }
     for (const p of G.sparks) { g.fillStyle = `rgba(255,235,210,${1 - p.age / p.life})`; g.fillRect(p.x, p.y, 1.6, 1.6); }
+    for (const tr of G.tracers) {
+      tr.age += 1 / 60; const z = tr.to[2] - S.D; if (z < 0.6) continue;
+      const [x, y] = project(tr.to[0], tr.to[1], z), a = Math.max(0, 1 - tr.age / 0.18);
+      g.strokeStyle = `rgba(255,240,210,${0.55 * a})`; g.lineWidth = 2.5 * (H / 500); g.beginPath(); g.moveTo(W * 0.58, H * 0.8); g.lineTo(x, y); g.stroke();
+      g.fillStyle = `rgba(255,250,230,${a})`; g.fillRect(x - 2, y - 2, 4, 4);
+    }
+    G.tracers = G.tracers.filter(tr => tr.age < 0.2);
     for (const e of figs) if ((e.foe || e.guard) && !e.dying && e.ping > 0 && e.geom) {   // ring pulses out when something shows up
       const [x, y] = e.geom.chest, u = 1 - e.ping, r = (0.5 + u * 1.6) * e.geom.kb, c = COL[e.kind].aura;
       g.strokeStyle = `rgba(${c},${e.ping * 0.8})`; g.lineWidth = 2; g.beginPath(); g.arc(x, y, r, 0, 7); g.stroke();
@@ -689,34 +714,30 @@ const ArcheryLevel = (() => {
     if (G.crackT > 0) G.crackT -= 1 / 60;
   }
 
-  // your bow, left of centre: the limbs bend and the string snaps back on each shot
+  // your crossbow, low and centre, stock pointing at the crosshair; the string snaps forward on each shot
   function bow(t) {
     if (G.phase === "brief") return;
-    const g = sctx, k = H / 500, rel = G.release / 0.18, d = rel;     // the string snaps back on each shot
-    const sway = G.speed > 0.3 ? Math.sin(G.bob * 2) * 4 * k : 0, shake = 0;
-    const gx = W * 0.3 + shake + rel * 6 * k, gy = H * 0.66 + sway - d * 10 * k, L = 250 * k, bend = 26 * k + d * 32 * k;
-    const tipT = [gx + bend * 0.9, gy - L], tipB = [gx + bend * 0.9, gy + L * 0.95];
-    g.save();
-    g.strokeStyle = "#0a0806"; g.lineCap = "round";
-    g.lineWidth = 9 * k; g.beginPath(); g.moveTo(tipT[0], tipT[1]); g.quadraticCurveTo(gx - bend * 1.1, gy - L * 0.45, gx, gy); g.quadraticCurveTo(gx - bend * 1.1, gy + L * 0.45, tipB[0], tipB[1]); g.stroke();
-    g.strokeStyle = "rgba(170,140,100,0.28)"; g.lineWidth = 1.4 * k; g.beginPath(); g.moveTo(tipT[0] - 3 * k, tipT[1]); g.quadraticCurveTo(gx - bend * 1.1 - 4 * k, gy - L * 0.45, gx - 4 * k, gy); g.stroke();
-    // string: straight at rest, drawn back toward your face (lower right) at full draw
-    const nock = [lerp(tipT[0] + 2 * k, W * 0.52, d), lerp(gy, H * 0.7, d)];
-    g.strokeStyle = "rgba(200,190,170,0.55)"; g.lineWidth = 1.1 * k;
-    g.beginPath(); g.moveTo(tipT[0], tipT[1]); g.lineTo(nock[0], nock[1]); g.lineTo(tipB[0], tipB[1]); g.stroke();
-    // nocked arrow along the line to where you aim
-    if (G.quiver > 0 && G.nock <= 0 && G.phase === "play") {
-      const [ax, ay] = aimPoint(t), [sx, sy] = toStage(ax, ay), dx = sx - nock[0], dy = sy - nock[1], dl = Math.hypot(dx, dy) || 1, len = 230 * k;
-      const tip = [nock[0] + dx / dl * len, nock[1] + dy / dl * len];
-      g.strokeStyle = "#16100a"; g.lineWidth = 3.2 * k; g.beginPath(); g.moveTo(nock[0], nock[1]); g.lineTo(tip[0], tip[1]); g.stroke();
-      g.fillStyle = "#0c0906"; g.beginPath(); g.moveTo(tip[0] + dx / dl * 14 * k, tip[1] + dy / dl * 14 * k); g.lineTo(tip[0] - dy / dl * 5 * k, tip[1] + dx / dl * 5 * k); g.lineTo(tip[0] + dy / dl * 5 * k, tip[1] - dx / dl * 5 * k); g.fill();
-      g.fillStyle = "rgba(210,200,180,0.5)"; g.beginPath(); g.moveTo(nock[0], nock[1]); g.lineTo(nock[0] + dx / dl * 30 * k - dy / dl * 9 * k, nock[1] + dy / dl * 30 * k + dx / dl * 9 * k); g.lineTo(nock[0] + dx / dl * 34 * k, nock[1] + dy / dl * 34 * k); g.fill();
-      if (d > 0) { g.fillStyle = "#0b0907"; g.beginPath(); g.ellipse(nock[0] + 10 * k, nock[1] + 16 * k, 22 * k, 30 * k, -0.5, 0, 7); g.fill(); }   // drawing hand
+    const g = sctx, k = H / 500, rel = G.release / 0.18, sway = G.speed > 0.3 ? Math.sin(G.bob * 2) * 4 * k : 0;
+    const [ax, ay] = aimPoint(t), B = [W * 0.58 + rel * 4 * k, H * 1.12 + sway + rel * 12 * k];
+    let ux = ax - B[0], uy = ay - B[1]; const ul = Math.hypot(ux, uy) || 1; ux /= ul; uy /= ul;
+    const nx = -uy, ny = ux, L = Math.min(210 * k, ul * 0.55), P = (s, n = 0) => [B[0] + ux * s * L + nx * n, B[1] + uy * s * L + ny * n];
+    const F = P(0.78), span = 110 * k, bend = 22 * k;
+    const tipA = [F[0] + nx * span - ux * bend, F[1] + ny * span - uy * bend], tipB = [F[0] - nx * span - ux * bend, F[1] - ny * span - uy * bend];
+    const loaded = G.nock <= 0 && G.quiver > 0, N = P(loaded ? 0.5 : 0.7);
+    g.save(); g.lineCap = "round"; g.lineJoin = "round";
+    g.strokeStyle = "#1a120a"; g.lineWidth = 34 * k; g.beginPath(); g.moveTo(...P(-0.1)); g.lineTo(...P(0.82)); g.stroke();        // stock
+    g.strokeStyle = "rgba(190,140,90,0.35)"; g.lineWidth = 4 * k; g.beginPath(); g.moveTo(...P(-0.1, -15 * k)); g.lineTo(...P(0.8, -15 * k)); g.stroke();
+    g.strokeStyle = "#0c0906"; g.lineWidth = 12 * k; g.beginPath(); g.moveTo(...tipA); g.quadraticCurveTo(F[0] + ux * 12 * k, F[1] + uy * 12 * k, ...tipB); g.stroke();   // prod
+    g.strokeStyle = "rgba(220,210,190,0.7)"; g.lineWidth = 2 * k; g.beginPath(); g.moveTo(...tipA); g.lineTo(...N); g.lineTo(...tipB); g.stroke();                     // string
+    if (loaded) {                                  // bolt in the groove
+      const T = P(0.98);
+      g.strokeStyle = "#2a1c10"; g.lineWidth = 6 * k; g.beginPath(); g.moveTo(...N); g.lineTo(...T); g.stroke();
+      g.fillStyle = "#cfc6b0"; g.beginPath(); g.moveTo(T[0] + ux * 16 * k, T[1] + uy * 16 * k); g.lineTo(T[0] + nx * 7 * k, T[1] + ny * 7 * k); g.lineTo(T[0] - nx * 7 * k, T[1] - ny * 7 * k); g.fill();
     }
-    g.fillStyle = "#0b0907"; g.beginPath(); g.ellipse(gx + 2 * k, gy + 6 * k, 20 * k, 32 * k, 0.15, 0, 7); g.fill();   // bow hand round the grip
-    g.fillStyle = "rgba(160,130,100,0.18)"; g.fillRect(gx - 14 * k, gy - 8 * k, 4 * k, 26 * k);
+    g.fillStyle = "#0b0907"; for (const [s2, n] of [[0.12, 22 * k], [0.62, -26 * k]]) { const [hx, hy] = P(s2, n); g.beginPath(); g.ellipse(hx, hy, 34 * k, 26 * k, Math.atan2(uy, ux), 0, 7); g.fill(); }   // hands
     g.restore();
   }
+
 
   // ---------------------------------------------------------------- HUD + panels
   // ---------------------------------------------------------------- HUD: pixel font, framed plates, pixel icons
@@ -845,14 +866,14 @@ const ArcheryLevel = (() => {
     }
   }
 
-  const KEYS = [["Left click", "Fire. Aim with the crosshair"], ["Right hold", "Zoom for long shots"], ["Space", "Move on from a hunt · Esc menu"]];
+  const KEYS = [["Left click", "Fire the crossbow. It hits what the crosshair is on"], ["Right hold", "Zoom for long shots"], ["Space", "Move on from a hunt · Esc menu"]];
   function showBrief() {
     const a = G.act;
     showPanel(`
       <p class="eyebrow">The Archer · Act ${a + 1} of 5</p>
       <h2>${["Into the woods", "The fort wall", "The town", "The palace", "Escape"][a]}</h2>
       <p class="lede">${[
-        "Night woods. Your bow, a quiver, nothing to eat. Hunt to stay alive. Then get into the fort, through the town and the palace, take the king's scroll and get out alive.",
+        "Night woods. Your crossbow, a quiver of bolts, nothing to eat. Hunt to stay alive. Then get into the fort, through the town and the palace, take the king's scroll and get out alive.",
         "The edge of the woods and the fort wall. Archers walk the top, spearmen hold the gate. Get in unseen: shoot from cover, aim for heads.",
         "Night streets inside the walls. Patrols, archers on the walls, townsfolk out late. Never hit a townsperson.",
         "Courtyard, great hall, then the king's chamber. The palace guard wears mail: body shots need two arrows. Shields stop arrows; heads don't.",
@@ -864,7 +885,7 @@ const ArcheryLevel = (() => {
         <li><i class="dot red"></i><span><b>Archers</b> shoot back once alerted, after a red glint.</span></li>
         <li><i class="dot blue"></i><span><b>Townsfolk</b>. Hitting one ends the run.</span></li>
       </ul>
-      <p class="note">Arrows drop over distance: aim a little high on far targets, and lead moving ones. Behind a bush or cart you are hidden. Head shots are silent; misses and body shots make noise.</p>
+      <p class="note">Crossbow bolts fly dead straight: whatever is under the crosshair is what you hit. Behind a bush or cart you are hidden. Head shots are silent; misses and body shots make noise.</p>
       <dl class="keys">${KEYS.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
       <div class="actions"><button id="p-go" class="primary">${a ? "Start act " + (a + 1) : "Start walking"}</button>${a ? "" : '<button id="p-acts">Choose act</button>'}</div>`,
       { "p-go": () => { hidePanel(); G.phase = "play"; G.actShown = G.act - 1; }, "p-acts": () => showActs() });

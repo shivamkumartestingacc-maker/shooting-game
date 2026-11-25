@@ -39,7 +39,7 @@ const URL = "file://" + require("path").resolve(__dirname, "../index.html");
         if (G.fighting && st && st.scroll && SCROLL.here && SCROLL.screen && !figs.some(f => f.foe && !f.dying)) { E.mouse.x = SCROLL.screen[0] * K; E.mouse.y = SCROLL.screen[1] * K; A.onDown(0); }
         if (tgt) {
           // aim: the head, raised by the drop over that distance, led by the target's sideways speed
-          const g = tgt.geom, dist = Math.hypot(tgt.x - cam.offX, tgt.z), tof = dist / (13 + 53 * Math.pow(0.9, 1.3)), k = cam.f / tgt.z * cam.zoom;
+          const g = tgt.geom, dist = Math.hypot(tgt.x - cam.offX, tgt.z), tof = 0, k = cam.f / tgt.z * cam.zoom;
           const vx = tgt.prevX != null ? (tgt.x - tgt.prevX) * 60 : 0;
           E.mouse.x = (g.head[0] + vx * tof * k) * K; E.mouse.y = (g.head[1] - 0.5 * 7 * tof * tof * k) * K;
           // hold fire while a townsperson stands between us and the target on screen
