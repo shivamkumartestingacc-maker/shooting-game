@@ -45,6 +45,8 @@ const StreetLevel = (() => {
   const spec = i => CS.specials[i].block;
   const door = (i, k) => { const b = spec(i); return [b.side * (FACADE - 0.2), b.z0 + b.doors[k] + 0.75, b.side]; };
   function foe(kind, role, x, z, o = {}) {
+    if (o.y0) z = Math.max(z, (o.y0 + 1.9 - cam.camH) * cam.f / (cam.hor - E.H * 0.08));   // keep rooftop men in frame
+    z = Math.max(z, Math.abs(x) * cam.f / (E.W * 0.42));                                  // and inside the left/right edges
     return add(Object.assign({ kind, role, x, z, yaw: 0, pose: role === "charger" ? "knife" : role === "gunman" ? "rifle" : "hang",
       weapon: role === "charger" ? "knife" : role === "gunman" ? "rifle" : null, speed: role === "charger" ? 3.3 : 1.8, st: "delay", delay: 0, foe: true }, o));
   }
@@ -79,14 +81,14 @@ const StreetLevel = (() => {
       [x, z, s] = door(2, 1); foe("red", "gunman", x, z, { delay: 1.0, mode: "stand", out: s * 8.4 });
       const b = spec(2); foe("red", "gunman", b.side * (FACADE - 1.7), b.z0 + 11, { y0: 4.7, delay: 2.2, mode: "roof" });
     } else if (i === 4) {
-      const car = makeCar({ x: -3.2, z: 11, yaw: -0.3, tone: [14, 16, 20] }); cover.push(car);
-      foe("red", "gunman", -2.6, 13.6, { mode: "cover", kneel: 1, delay: 0.8 });
-      foe("red", "gunman", -4.1, 13.2, { mode: "cover", kneel: 1, delay: 2.0 });
-      let [x, z, s] = door(3, 0); foe("orange", "charger", x, z, { delay: 2.6, out: s * 8.2 });
-      [x, z, s] = door(3, 1); foe("red", "gunman", x, z, { delay: 1.4, mode: "stand", out: s * 8.4 });
-      foe("orange", "thrower", 8.4, 16, { delay: 3.5, out: 7.8 });
-      const b = spec(4); foe("red", "gunman", b.side * FACADE, b.z0 + 5, { y0: b.h, delay: 4.5, mode: "roof" });
-      foe("orange", "charger", -8.8, 24, { delay: 6 });
+      const car = makeCar({ x: -2.8, z: 8.5, yaw: -0.3, tone: [14, 16, 20] }); cover.push(car);
+      foe("red", "gunman", -2.2, 10.8, { mode: "cover", kneel: 1, delay: 0.3 });
+      foe("red", "gunman", -3.7, 10.5, { mode: "cover", kneel: 1, delay: 1.5 });
+      let [x, z, s] = door(3, 0); foe("red", "gunman", x, z, { delay: 0.6, mode: "stand", out: s * 8.4 });
+      [x, z, s] = door(3, 1); foe("orange", "charger", x, z, { delay: 1.8, out: s * 8.2 });
+      foe("orange", "thrower", 7.8, 12, { delay: 2.4, out: 7.4 });
+      const b = spec(4); foe("red", "gunman", b.side * FACADE, b.z0 + 5, { y0: b.h, delay: 3, mode: "roof" });
+      foe("orange", "charger", 8.6, 16, { delay: 4.5 });
     }
   }
   const foesLeft = () => figs.filter(f => f.foe && !f.dying).length;
@@ -136,8 +138,9 @@ const StreetLevel = (() => {
       if (e.role === "flee") { if ((e.delayRun = (e.delayRun || 0) - dt) > 0) idle(e, dt); else if (walkTo(e, e.tx, e.tz, dt)) e.role = "ped"; e.pose = "hang"; continue; }
       if (e.role === "hide") { idle(e, dt); continue; }
       if (G.phase !== "play") { idle(e, dt); continue; }
-      if (e.st === "delay") { idle(e, dt); if ((e.delay -= dt) <= 0) e.st = e.out != null ? "exit" : "go"; continue; }
-      if (e.st === "exit") { if (walkTo(e, e.out, e.z - 0.6, dt)) e.st = "go"; continue; }
+      if (e.st === "delay") { idle(e, dt); if ((e.delay -= dt) <= 0) { e.st = e.out != null ? "exit" : "go"; e.ping = 1; } continue; }
+      e.ping = Math.max(0, (e.ping || 0) - dt * 0.9);
+      if (e.st === "exit") { e.exitZ = e.exitZ ?? e.z - 0.6; if (walkTo(e, e.out, e.exitZ, dt)) e.st = "go"; continue; }   // fixed point, set once
       if (e.role === "charger") charger(e, dt);
       else if (e.role === "thrower") thrower(e, dt);
       else gunman(e, dt);
@@ -181,7 +184,10 @@ const StreetLevel = (() => {
   }
   function gunman(e, dt) {
     if (e.st === "go") {
-      if (e.mode === "stand") { if (!walkTo(e, e.out ?? e.x, Math.max(e.z - 1.2, 4), dt)) return; }
+      if (e.mode === "stand") {                                 // step out to a fixed spot that stays in frame
+        const sx = e.out ?? e.x; e.standZ = e.standZ ?? Math.max(e.z - 1.2, Math.abs(sx) * cam.f / (E.W * 0.42), 4);
+        if (!walkTo(e, sx, e.standZ, dt)) return;
+      }
       e.st = "raise"; e.tm = 0.6;
     }
     idle(e, dt); face(e, dt);
@@ -267,6 +273,10 @@ const StreetLevel = (() => {
       g.beginPath(); g.moveTo(mx - r * 1.8, my); g.lineTo(mx + r * 1.8, my); g.moveTo(mx, my - r * 1.2); g.lineTo(mx, my + r * 1.2); g.stroke();
     }
     for (const p of G.sparks) { g.fillStyle = `rgba(255,235,210,${1 - p.age / p.life})`; g.fillRect(p.x, p.y, 1.6, 1.6); }
+    for (const e of figs) if (e.foe && !e.dying && e.ping > 0 && e.geom) {     // ring pulses out when someone shows up
+      const [x, y] = e.geom.chest, u = 1 - e.ping, r = (0.5 + u * 1.6) * e.geom.kb, c = COL[e.kind].aura;
+      g.strokeStyle = `rgba(${c},${e.ping * 0.8})`; g.lineWidth = 2; g.beginPath(); g.arc(x, y, r, 0, 7); g.stroke();
+    }
     g.globalCompositeOperation = "source-over";
     for (const p of G.dust) { g.fillStyle = `rgba(150,155,165,${0.6 * (1 - p.age / p.life)})`; g.beginPath(); g.arc(p.x, p.y, p.r, 0, 7); g.fill(); }
     for (const [u, v, seed] of G.cracks.slice(-4)) {          // hits you take blur the camera lens
@@ -316,6 +326,16 @@ const StreetLevel = (() => {
     vctx.fillStyle = "rgba(200,210,225,0.12)"; vctx.fillRect(pad, VH - pad - 6 * k, 180 * k, 6 * k);
     vctx.fillStyle = G.hp > 30 ? "rgba(190,215,240,0.75)" : "rgba(255,60,50,0.9)";
     vctx.fillRect(pad, VH - pad - 6 * k, 180 * k * G.hp / 100, 6 * k);
+    for (const e of figs) {                                    // arrows at the screen edge for anyone out of frame
+      if (!e.foe || e.dying || e.st === "delay" || !e.geom) continue;
+      const [hx, hy] = e.geom.head, x = hx / SCALE * k, y = hy / SCALE * k, m = 30 * k;
+      if (x > m && x < VW - m && y > m && y < VH - m) continue;
+      const ax = clamp(x, m, VW - m), ay = clamp(y, m, VH - m), a = Math.atan2(y - VH / 2, x - VW / 2), c = COL[e.kind].aura;
+      vctx.save(); vctx.translate(ax, ay); vctx.rotate(a);
+      vctx.fillStyle = `rgba(${c},${0.6 + 0.4 * Math.sin(t * 10)})`; vctx.shadowColor = `rgba(${c},1)`; vctx.shadowBlur = 10 * k;
+      vctx.beginPath(); vctx.moveTo(12 * k, 0); vctx.lineTo(-8 * k, -9 * k); vctx.lineTo(-8 * k, 9 * k); vctx.closePath(); vctx.fill();
+      vctx.restore();
+    }
     if (G.msgT > 0) glowText(G.msg, VW / 2, VH * 0.2, 22 * k, ink, Math.min(1, G.msgT) * 0.9);
     if (stones.length && G.phase === "play") glowText("STONE — SHOOT IT", VW / 2, VH * 0.27, 13 * k, "255,200,150", 0.5 + 0.5 * Math.sin(t * 12));
     if (G.phase === "play" && G.helpT > 0) glowText("CLICK FIRE  ·  SPACE RELOAD  ·  ESC MENU", VW / 2, VH - pad - 3 * k, 13 * k, ink, Math.min(1, G.helpT) * 0.7);
